@@ -15,6 +15,7 @@ import {
   Maximize2,
   AlertTriangle,
   Pencil,
+  Eye,
 } from 'lucide-react'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { Button } from '@/components/ui/Button'
@@ -61,6 +62,7 @@ export default function DraftDetailPage() {
   const [exporting, setExporting] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [restoringRev, setRestoringRev] = useState<number | null>(null)
+  const [previewRevision, setPreviewRevision] = useState<Revision | null>(null)
   const { isTeamAdmin } = useCurrentUser()
   const [showPublish, setShowPublish] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
@@ -477,26 +479,36 @@ export default function DraftDetailPage() {
                         {formatDateTime(r.createdAt)}
                       </p>
                     </div>
-                    {isCurrent ? (
-                      <span className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-lg bg-primary/10 dark:bg-primary-light/10 text-primary dark:text-primary-light">
-                        Current
-                      </span>
-                    ) : (
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleRestore(r.revisionNumber)}
-                        disabled={restoringRev !== null || actionPending}
-                        className="flex-shrink-0"
-                        title={`Switch to v${r.revisionNumber}`}
+                        onClick={() => setPreviewRevision(r)}
+                        disabled={!r.exportUrl || restoringRev === r.revisionNumber}
+                        title={r.exportUrl ? `Preview v${r.revisionNumber}` : 'No render available for this version'}
                       >
-                        {restoringRev === r.revisionNumber ? (
-                          <Loader2 size={12} className="animate-spin" />
-                        ) : (
-                          <RotateCcw size={12} />
-                        )}
+                        <Eye size={12} />
                       </Button>
-                    )}
+                      {isCurrent ? (
+                        <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-lg bg-primary/10 dark:bg-primary-light/10 text-primary dark:text-primary-light">
+                          Current
+                        </span>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRestore(r.revisionNumber)}
+                          disabled={restoringRev !== null || actionPending}
+                          title={`Switch to v${r.revisionNumber}`}
+                        >
+                          {restoringRev === r.revisionNumber ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <RotateCcw size={12} />
+                          )}
+                        </Button>
+                      )}
+                    </div>
                   </li>
                   )
                 })}
@@ -513,6 +525,17 @@ export default function DraftDetailPage() {
           onClose={() => setShowPreview(false)}
           src={draft.exportUrl}
           topic={draft.brief.topic}
+          aspectRatio={draft.brief.aspectRatio}
+        />
+      )}
+
+      {/* Full-screen preview of a past revision, opened from Revision History. */}
+      {previewRevision?.exportUrl && (
+        <ImageLightbox
+          open={true}
+          onClose={() => setPreviewRevision(null)}
+          src={previewRevision.exportUrl}
+          topic={`${draft.brief.topic} — v${previewRevision.revisionNumber}`}
           aspectRatio={draft.brief.aspectRatio}
         />
       )}
