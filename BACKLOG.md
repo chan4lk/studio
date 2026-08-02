@@ -7,8 +7,8 @@ Index of raised feature/idea requests and their specclaw change status. Each row
 | BL-01 | Preview button on every draft revision | [preview-draft-revisions](.specclaw/changes/preview-draft-revisions/proposal.md) | ✅ Merged | [PR #2](https://github.com/chan4lk/studio/pull/2) |
 | BL-02 | Clone a post | [clone-post](.specclaw/changes/clone-post/proposal.md) | ✅ Merged | [PR #4](https://github.com/chan4lk/studio/pull/4) |
 | BL-03 | Floating "start new post" button | [floating-new-post-button](.specclaw/changes/floating-new-post-button/proposal.md) | ✅ Merged | [PR #5](https://github.com/chan4lk/studio/pull/5) |
-| BL-04 | Fold MCP into Studio API (shared facade) | [mcp-api-facade](.specclaw/changes/mcp-api-facade/proposal.md) | ✅ Verified, PR open | [PR #6](https://github.com/chan4lk/studio/pull/6) — all gates green incl. `team-isolation.test.ts` 19/19 + `brand-kit.test.ts` 14/14, run for real against disposable test infra |
+| BL-04 | Fold MCP into Studio API (shared facade) | [mcp-api-facade](.specclaw/changes/mcp-api-facade/proposal.md) | ✅ Merged | [PR #6](https://github.com/chan4lk/studio/pull/6) — all gates green incl. `team-isolation.test.ts` 19/19 + `brand-kit.test.ts` 14/14, run for real against disposable test infra |
 
 Raised by stakeholder 2026-08-02 via Discord. Superseded the ad hoc list in `docs/bistec-studio-backlog.md` § Post-v1 Feature Requests — new items should be captured here as specclaw changes, not that doc.
 
-Building now (`/specclaw:build` per change, sequentially — `branch-per-change` git strategy) → verify → PR → merge → prod deploy handoff.
+**Status 2026-08-02:** all 4 merged to `main`. Prod deploy handed off to Hermes (`#h-msc9qu32-dfbf`) — blocked on an empty/missing `COOLIFY_API_TOKEN` GitHub secret (the Docker build+push to GHCR succeeds on every merge; only the Coolify redeploy webhook 401s). Awaiting resolution.
