@@ -13,7 +13,14 @@ export const publishers = {
   LINKEDIN: linkedinPublisher,
 } as const satisfies Record<
   Channel,
-  { publish(url: string, caption: string, teamId: string): Promise<{ platformId: string }> }
+  {
+    publish(
+      url: string,
+      caption: string,
+      teamId: string,
+      exportKey?: string | null
+    ): Promise<{ platformId: string }>
+  }
 >
 
 // Statuses that count as "live" for duplicate detection: a second publish of the
@@ -40,7 +47,7 @@ export async function publishToChannel(
   if (!signedExportUrl) {
     throw new PublishError(channel, 'draft export missing')
   }
-  return publishers[channel].publish(signedExportUrl, copyText, teamId)
+  return publishers[channel].publish(signedExportUrl, copyText, teamId, exportKey)
 }
 
 // Immediate-publish state machine shared by the API POST /api/posts path and
