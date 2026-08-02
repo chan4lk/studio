@@ -22,7 +22,14 @@ vi.mock('@/lib/agent/vision', () => ({ runVisionModel: h.runVisionModel }))
 vi.mock('@/lib/campaign/briefingAssistant', () => ({ runBriefingModel: h.runBriefingModel }))
 vi.mock('@/lib/storage/minio', () => ({
   BUCKET_DOCS: 'docs',
+  BUCKET_BRANDKITS: 'brandkits',
   getPresignedUrl: vi.fn(async (_bucket: string, key: string) => `https://minio.invalid/docs/${key}`),
+  // samplePalette's try/catch treats a throw as an unreadable reference and
+  // skips it — matches the pre-refactor behavior of an unmocked fetch() to a
+  // fake host failing silently in the same way.
+  getObjectBuffer: vi.fn(async () => {
+    throw new Error('not mocked in this suite')
+  }),
 }))
 
 import { collectBrandKitGrounding, extractBrandKitBlock, runBrandKitChat } from '@/lib/brandkit/assistant'
@@ -65,10 +72,10 @@ describe('collectBrandKitGrounding', () => {
       artifactImageUrls: [
         // Duplicate of the first presigned document image — must be deduped.
         'https://minio.invalid/docs/brandkits/k1/a.png',
-        'https://cdn/art-1.png',
-        'https://cdn/art-2.png',
-        'https://cdn/art-3.png',
-        'https://cdn/art-4.png',
+        'https://mock-public/brandkits/art-1.png',
+        'https://mock-public/brandkits/art-2.png',
+        'https://mock-public/brandkits/art-3.png',
+        'https://mock-public/brandkits/art-4.png',
       ],
     })
     const { imageUrls } = await collectBrandKitGrounding('k1')
@@ -76,9 +83,9 @@ describe('collectBrandKitGrounding', () => {
       'https://minio.invalid/docs/brandkits/k1/a.png',
       'https://minio.invalid/docs/brandkits/k1/b.png',
       'https://minio.invalid/docs/brandkits/k1/c.png',
-      'https://cdn/art-1.png',
-      'https://cdn/art-2.png',
-      'https://cdn/art-3.png',
+      'https://mock-public/brandkits/art-1.png',
+      'https://mock-public/brandkits/art-2.png',
+      'https://mock-public/brandkits/art-3.png',
     ]) // doc images first, dup removed, art-4 dropped by the cap of 6
   })
 
@@ -134,8 +141,8 @@ describe('runBrandKitChat grounding', () => {
     expect(result.reply).toBe('vision reply — no block')
     expect(h.runBriefingModel).not.toHaveBeenCalled()
     expect(h.runVisionModel).toHaveBeenCalledTimes(1)
-    const call = h.runVisionModel.mock.calls[0][0] as { imageUrls: string[] }
-    expect(call.imageUrls).toEqual(['https://minio.invalid/docs/brandkits/k1/ref.png'])
+    const call = h.runVisionModel.mock.calls[0][0] as { imageRefs: Array<{ bucket: string; key: string }> }
+    expect(call.imageRefs).toEqual([{ bucket: 'docs', key: 'brandkits/k1/ref.png' }])
   })
 })
 

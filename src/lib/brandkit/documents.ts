@@ -20,10 +20,13 @@ export async function collectBrandKitDocTexts(
   })
 }
 
-// Presigned URLs for a kit's uploaded reference IMAGES (the docs bucket is
-// private — the vision model fetches these server-side). Mirrors
+// Presigned URLs + bucket/key refs for a kit's uploaded reference IMAGES (the
+// docs bucket is private — the vision model fetches the URLs server-side;
+// the refs let palette sampling read the bytes directly, no fetch). Mirrors
 // collectCampaignDocImageUrls, same cap.
-export async function collectBrandKitDocImageUrls(kitId: string): Promise<string[]> {
+export async function collectBrandKitDocImageRefs(
+  kitId: string
+): Promise<Array<{ url: string; bucket: string; key: string }>> {
   const { BUCKET_DOCS, getPresignedUrl } = await import("@/lib/storage/minio")
   const images = await prisma.brandKitDocument.findMany({
     where: { brandKitId: kitId, contentType: { in: DOC_IMAGE_MIME_TYPES } },
@@ -31,5 +34,17 @@ export async function collectBrandKitDocImageUrls(kitId: string): Promise<string
     take: MAX_DOC_IMAGES_CONTEXT,
     select: { objectKey: true },
   })
-  return Promise.all(images.map((d) => getPresignedUrl(BUCKET_DOCS, d.objectKey)))
+  return Promise.all(
+    images.map(async (d) => ({
+      url: await getPresignedUrl(BUCKET_DOCS, d.objectKey),
+      bucket: BUCKET_DOCS,
+      key: d.objectKey,
+    }))
+  )
+}
+
+// URL-only view of the above, kept for any caller that only needs the
+// presigned links (e.g. vision).
+export async function collectBrandKitDocImageUrls(kitId: string): Promise<string[]> {
+  return (await collectBrandKitDocImageRefs(kitId)).map((r) => r.url)
 }

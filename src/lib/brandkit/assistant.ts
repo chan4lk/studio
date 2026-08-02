@@ -4,6 +4,7 @@ import { runVisionModel } from '@/lib/agent/vision'
 import { runBriefingModel } from '@/lib/campaign/briefingAssistant'
 import { buildDocsContext } from '@/lib/campaign/documents'
 import { sampleImageColors } from '@/lib/renderer/puppeteer'
+import { BUCKET_BRANDKITS, getObjectBuffer } from '@/lib/storage/minio'
 import { fenceUntrusted, UNTRUSTED_CONTENT_GUARD } from '@/lib/agent/untrusted'
 import { MOCK_AI, MOCK_PUPPETEER, buildMockBrandKitReply } from '@/lib/testHooks'
 
@@ -63,15 +64,30 @@ export function extractBrandKitBlock(text: string): Omit<BrandKitSuggestion, 'co
   }
 }
 
+// BrandKitArtifact has no stored object key — its `url` is always this
+// process's own publicUrl(BUCKET_BRANDKITS, key) output (forcePathStyle: true,
+// so the key is everything after "/${bucket}/"). Parsed once here at the
+// boundary so callers never re-derive it.
+function keyFromPublicUrl(url: string, bucket: string): string | null {
+  const marker = `/${bucket}/`
+  const idx = url.indexOf(marker)
+  return idx === -1 ? null : url.slice(idx + marker.length)
+}
+
 // Reference images the vision model + color sampler work from (feedToAI only).
-async function referenceImageUrls(kitId: string): Promise<string[]> {
+async function referenceImageUrls(kitId: string): Promise<Array<{ url: string; bucket: string; key: string }>> {
   const artifacts = await prisma.brandKitArtifact.findMany({
     where: { brandKitId: kitId, feedToAI: true, type: { in: ['REFERENCE_IMAGE', 'EXAMPLE_POST', 'LOGO'] } },
     orderBy: { createdAt: 'asc' },
     take: 6,
     select: { url: true },
   })
-  return artifacts.map((a) => a.url)
+  const refs: Array<{ url: string; bucket: string; key: string }> = []
+  for (const a of artifacts) {
+    const key = keyFromPublicUrl(a.url, BUCKET_BRANDKITS)
+    if (key) refs.push({ url: a.url, bucket: BUCKET_BRANDKITS, key })
+  }
+  return refs
 }
 
 // Parsed text rows of the kit's feedToAI reference DOCUMENT artifacts (brand
@@ -87,8 +103,12 @@ async function referenceDocRows(kitId: string): Promise<Array<{ name: string; pa
 
 export interface BrandKitGrounding {
   // Union of uploaded document images (presigned, FIRST) and feedToAI artifact
-  // images — deduped, capped at 6. Vision input AND palette-sampling source.
+  // images — deduped, capped at 6. Vision input source.
   imageUrls: string[]
+  // Same set/order/dedup as imageUrls, but as bucket+key refs for direct
+  // internal object reads — palette-sampling source (samplePalette never
+  // fetches a URL).
+  imageRefs: Array<{ bucket: string; key: string }>
   // Uploaded document texts (first) + REFERENCE_DOC artifact texts, assembled
   // under the shared buildDocsContext caps.
   docs: { text: string; truncated: boolean }
@@ -98,36 +118,37 @@ export interface BrandKitGrounding {
 // (BrandKitDocument — never generation-visible) unioned with its feedToAI
 // artifacts. Document images come first so they win the cap.
 export async function collectBrandKitGrounding(kitId: string): Promise<BrandKitGrounding> {
-  const { collectBrandKitDocTexts, collectBrandKitDocImageUrls } = await import('@/lib/brandkit/documents')
-  const [artifactUrls, docImageUrls, artifactDocRows, kitDocRows] = await Promise.all([
+  const { collectBrandKitDocTexts, collectBrandKitDocImageRefs } = await import('@/lib/brandkit/documents')
+  const [artifactRefs, docImageRefs, artifactDocRows, kitDocRows] = await Promise.all([
     referenceImageUrls(kitId),
-    collectBrandKitDocImageUrls(kitId),
+    collectBrandKitDocImageRefs(kitId),
     referenceDocRows(kitId),
     collectBrandKitDocTexts(kitId),
   ])
   const seen = new Set<string>()
   const imageUrls: string[] = []
-  for (const url of [...docImageUrls, ...artifactUrls]) {
-    if (seen.has(url)) continue
-    seen.add(url)
-    imageUrls.push(url)
+  const imageRefs: Array<{ bucket: string; key: string }> = []
+  for (const ref of [...docImageRefs, ...artifactRefs]) {
+    if (seen.has(ref.url)) continue
+    seen.add(ref.url)
+    imageUrls.push(ref.url)
+    imageRefs.push({ bucket: ref.bucket, key: ref.key })
     if (imageUrls.length >= 6) break
   }
-  return { imageUrls, docs: buildDocsContext([...kitDocRows, ...artifactDocRows]) }
+  return { imageUrls, imageRefs, docs: buildDocsContext([...kitDocRows, ...artifactDocRows]) }
 }
 
 // Sample a merged palette across all reference images (dedup near-duplicates,
 // keep the most-frequent first). Best-effort: sampling failures never fail the chat.
-async function samplePalette(urls: string[]): Promise<string[]> {
+async function samplePalette(refs: Array<{ bucket: string; key: string }>): Promise<string[]> {
   if (MOCK_PUPPETEER) return sampleImageColors('mock')
   const all: string[] = []
-  for (const url of urls) {
+  for (const { bucket, key } of refs) {
     try {
-      const res = await fetch(url)
-      if (!res.ok) continue
-      const buf = Buffer.from(await res.arrayBuffer())
-      const mediaType = (res.headers.get('content-type') ?? 'image/png').split(';')[0]
-      const dataUrl = `data:${mediaType};base64,${buf.toString('base64')}`
+      const buf = await getObjectBuffer(bucket, key)
+      // getObjectBuffer has no content-type header to read; these are always
+      // our own uploaded brand-kit/doc images, so default to PNG as before.
+      const dataUrl = `data:image/png;base64,${buf.toString('base64')}`
       all.push(...(await sampleImageColors(dataUrl, 4)))
     } catch {
       /* skip an unreadable reference */
@@ -171,13 +192,13 @@ export async function runBrandKitChat(
   messages: ChatMessage[],
   teamId: string
 ): Promise<BrandKitChatResult> {
-  const { imageUrls: urls, docs } = await collectBrandKitGrounding(kitId)
+  const { imageUrls: urls, imageRefs, docs } = await collectBrandKitGrounding(kitId)
 
   if (MOCK_AI) {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user')
     const reply = buildMockBrandKitReply(lastUser?.content ?? '')
     const block = extractBrandKitBlock(reply)
-    const sampled = await samplePalette(urls)
+    const sampled = await samplePalette(imageRefs)
     return { reply, suggestion: block ? { ...block, colors: mergeColors(block.colors, sampled) } : null }
   }
 
@@ -218,9 +239,9 @@ export async function runBrandKitChat(
   // mode-agnostic text call the campaign briefing assistant uses.
   const [reply, sampled] = await Promise.all([
     urls.length > 0
-      ? runVisionModel({ system, userMessage, imageUrls: urls, label: 'brandkit', teamId })
+      ? runVisionModel({ system, userMessage, imageRefs, label: 'brandkit', teamId })
       : runBriefingModel(system, [{ role: 'user', content: userMessage }], teamId),
-    samplePalette(urls),
+    samplePalette(imageRefs),
   ])
   const block = extractBrandKitBlock(reply)
   return { reply, suggestion: block ? { ...block, colors: mergeColors(block.colors, sampled) } : null }
