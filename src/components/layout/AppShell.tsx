@@ -10,6 +10,7 @@ import { Logo } from '@/components/Logo'
 import { ConfirmProvider } from '@/components/ui/ConfirmDialog'
 import { ClaudeTokenPrompt } from '@/components/settings/ClaudeTokenPrompt'
 import { TeamSwitcher } from '@/components/layout/TeamSwitcher'
+import { NewPostFab } from '@/components/layout/NewPostFab'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { authClient } from '@/lib/auth-client'
 
@@ -219,6 +220,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </main>
         </div>
+
+        <NewPostFab />
       </div>
     </ConfirmProvider>
   )
