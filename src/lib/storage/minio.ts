@@ -201,6 +201,17 @@ export function exportKey(kind: ExportKind, id: string): string {
   return `exports/${kind}-${id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`
 }
 
+// Reads an object's bytes directly via the internal S3 client — for server-side
+// code that needs its own storage's bytes (color sampling, vision ingestion,
+// re-uploading an export elsewhere) and has no reason to round-trip through the
+// public hostname. Never touches MINIO_PUBLIC_ENDPOINT or its DNS.
+export async function getObjectBuffer(bucket: string, key: string): Promise<Buffer> {
+  const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+  const bytes = await res.Body?.transformToByteArray()
+  if (!bytes) throw new Error(`Empty object body: ${bucket}/${key}`)
+  return Buffer.from(bytes)
+}
+
 // Persists a base64 `data:` image URL into the public IMAGES bucket and returns
 // its stable public URL. Single implementation for the agent's generateImage
 // tool and the /api/generate/image route — enforces the raster allow-list in

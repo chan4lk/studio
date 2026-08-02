@@ -6,6 +6,7 @@ import { resolveAnthropicApiKey } from '@/providers/registry'
 import { isCliMode, modelFor } from '@/lib/agent/config'
 import { runClaudeCli } from '@/lib/agent/claudeCli'
 import { UNTRUSTED_CONTENT_GUARD } from '@/lib/agent/untrusted'
+import { getObjectBuffer } from '@/lib/storage/minio'
 
 // Vision plumbing (F5/F6): send one or more images to a vision-capable model and
 // get its text back. This is the FIRST real image-input path in the app — every
@@ -24,8 +25,18 @@ import { UNTRUSTED_CONTENT_GUARD } from '@/lib/agent/untrusted'
 const MAX_TOKENS = 2048
 const CLI_TIMEOUT_MS = 180_000
 
-// Anthropic accepts these image media types; others are coerced to png.
-const SUPPORTED = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+// Anthropic accepts these image media types; others are coerced to png. We no
+// longer get a content-type header (bytes come from an internal S3 read, not
+// an HTTP fetch), so the media type is inferred from the object key's
+// extension instead — same fallback-to-png behavior as before for anything
+// unrecognized.
+const EXT_TO_MEDIA_TYPE: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+}
 const EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -39,19 +50,22 @@ interface FetchedImage {
   bytes: Buffer
 }
 
-async function fetchImage(url: string): Promise<FetchedImage> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`Failed to fetch reference image (${res.status})`)
-  const bytes = Buffer.from(await res.arrayBuffer())
-  const headerType = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
-  const mediaType = SUPPORTED.has(headerType) ? headerType : 'image/png'
+export interface ImageRef {
+  bucket: string
+  key: string
+}
+
+async function fetchImage(ref: ImageRef): Promise<FetchedImage> {
+  const bytes = await getObjectBuffer(ref.bucket, ref.key)
+  const ext = ref.key.split('.').pop()?.toLowerCase() ?? ''
+  const mediaType = EXT_TO_MEDIA_TYPE[ext] ?? 'image/png'
   return { base64: bytes.toString('base64'), mediaType, bytes }
 }
 
 export interface VisionRequest {
   system: string
   userMessage: string
-  imageUrls: string[]
+  imageRefs: ImageRef[]
   maxTokens?: number
   label?: string
   // Required for API-mode Anthropic key resolution (team-tenancy fix,
@@ -61,7 +75,7 @@ export interface VisionRequest {
 }
 
 export async function runVisionModel(req: VisionRequest): Promise<string> {
-  const images = await Promise.all(req.imageUrls.map(fetchImage))
+  const images = await Promise.all(req.imageRefs.map(fetchImage))
 
   if (isCliMode()) return runVisionCli(req, images)
 

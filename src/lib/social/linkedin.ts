@@ -2,6 +2,7 @@ import { PublishError } from "./types"
 import { prisma } from "@/lib/prisma"
 import { decrypt } from "@/lib/crypto"
 import { MOCK_SOCIAL, shouldMockPublishFail } from "@/lib/testHooks"
+import { BUCKET_EXPORTS, getObjectBuffer } from "@/lib/storage/minio"
 
 // Team-scoped lookup — no env-var fallback. A team with no connected
 // LinkedIn channel simply can't publish; there is no shared/global credential.
@@ -29,6 +30,7 @@ export async function publish(
   exportUrl: string,
   copyText: string,
   teamId: string,
+  exportKey?: string | null,
 ): Promise<{ platformId: string }> {
   // Test seam: skip the LinkedIn UGC flow. The failure path (MOCK_SOCIAL_FAIL
   // global, or a __FAIL_ALWAYS__/__FAIL_ONCE__ sentinel in the caption) drives
@@ -92,16 +94,26 @@ export async function publish(
     )
   }
 
-  // Step 2: Fetch image bytes and upload to LinkedIn
-  const imageResponse = await fetch(exportUrl)
-  if (!imageResponse.ok) {
-    throw new PublishError(
-      "LINKEDIN",
-      `Failed to fetch image from exportUrl: HTTP ${imageResponse.status}`,
-    )
+  // Step 2: Get image bytes and upload to LinkedIn. Prefer reading the object
+  // directly from MinIO with our own credentials — no need to depend on the
+  // container resolving/routing to the public MinIO hostname just to fetch
+  // bytes we already have access to. Legacy rows stored a full URL instead of
+  // an object key (same tolerance as resolveExportUrl), so fall back to
+  // fetching the signed URL when there's no key to read internally.
+  let imageBytes: ArrayBuffer
+  if (exportKey && !/^https?:\/\//i.test(exportKey)) {
+    const buffer = await getObjectBuffer(BUCKET_EXPORTS, exportKey)
+    imageBytes = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
+  } else {
+    const imageResponse = await fetch(exportUrl)
+    if (!imageResponse.ok) {
+      throw new PublishError(
+        "LINKEDIN",
+        `Failed to fetch image from exportUrl: HTTP ${imageResponse.status}`,
+      )
+    }
+    imageBytes = await imageResponse.arrayBuffer()
   }
-
-  const imageBytes = await imageResponse.arrayBuffer()
 
   const uploadResponse = await fetch(uploadInfo.uploadUrl, {
     method: "PUT",
