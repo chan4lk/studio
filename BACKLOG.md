@@ -7,7 +7,7 @@ Index of raised feature/idea requests and their specclaw change status. Each row
 | BL-01 | Preview button on every draft revision | [preview-draft-revisions](.specclaw/changes/preview-draft-revisions/proposal.md) | ✅ Merged | [PR #2](https://github.com/chan4lk/studio/pull/2) |
 | BL-02 | Clone a post | [clone-post](.specclaw/changes/clone-post/proposal.md) | ✅ Merged | [PR #4](https://github.com/chan4lk/studio/pull/4) |
 | BL-03 | Floating "start new post" button | [floating-new-post-button](.specclaw/changes/floating-new-post-button/proposal.md) | ✅ Merged | [PR #5](https://github.com/chan4lk/studio/pull/5) |
-| BL-04 | Fold MCP into Studio API (shared facade) | [mcp-api-facade](.specclaw/changes/mcp-api-facade/proposal.md) | 🟡 PR open, awaiting go-ahead | [PR #6](https://github.com/chan4lk/studio/pull/6) — code-complete, gates green, but its primary security gate (cross-tenant isolation E2E) couldn't run in this sandbox (no test DB). Holding for confirmation before merge. |
+| BL-04 | Fold MCP into Studio API (shared facade) | [mcp-api-facade](.specclaw/changes/mcp-api-facade/proposal.md) | ✅ Verified, PR open | [PR #6](https://github.com/chan4lk/studio/pull/6) — all gates green incl. `team-isolation.test.ts` 19/19 + `brand-kit.test.ts` 14/14, run for real against disposable test infra |
 
 Raised by stakeholder 2026-08-02 via Discord. Superseded the ad hoc list in `docs/bistec-studio-backlog.md` § Post-v1 Feature Requests — new items should be captured here as specclaw changes, not that doc.
 

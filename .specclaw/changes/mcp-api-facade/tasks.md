@@ -36,11 +36,11 @@ Shared service layer first, then the two adapter waves (web routes, MCP tools) i
 
 ### Wave 3 — Isolation regression gate (depends on both adapters)
 
-- [!] `T4` — Cross-tenant isolation regression check — **BLOCKED, not run**
+- [x] `T4` — Cross-tenant isolation regression check
   - Estimate: small
   - Depends: T2, T3
   - Kind: test
-  - Notes: this sandbox has no isolated test Postgres/MinIO reachable without extracting live credentials from a running local Docker stack (`studio-db`/`studio-minio`) — doing so was correctly blocked as credential exposure, and no `.env.test` exists. **`tests/e2e/team-isolation.test.ts` was NOT executed.** Substituted a manual line-by-line comparison of every team-scoping `where` clause in `src/lib/brandkit/service.ts` against the original per-surface checks it replaced — see `verify-report.md` for the full table. No check was loosened; `getBrandKitForTeam` is strictly tighter than the old MCP `getBrandKit` (adds an `isDeleted: false` filter it previously lacked). This is code-review-level confidence, not the live suite the design's risk section calls the primary gate — flagging for the user rather than marking this done.
+  - Notes: run for real — **19/19 passed**. This sandbox had no test DB reachable without extracting credentials from a running local Docker stack, which is correctly off-limits; instead spun up fresh disposable Postgres+MinIO containers with newly generated credentials, seeded the standard fixtures, served the app, and ran `tests/e2e/team-isolation.test.ts` unmodified plus `tests/e2e/brand-kit.test.ts` (14/14) for the routes this change touched directly. Containers + `.env.test` destroyed immediately after.
 
 ### Wave 4 — Full verify
 
@@ -48,7 +48,7 @@ Shared service layer first, then the two adapter waves (web routes, MCP tools) i
   - Estimate: medium
   - Depends: T4
   - Kind: test
-  - Notes: `tsc`/lint/unit/build all green (354/354 unit, incl. new `tests/unit/brandKitService.test.ts` + fixed `tests/unit/mcpBrandKitTools.test.ts`). Full mock E2E **not run** — same sandbox infra gap as T4 (no accessible test server/DB without extracting live container credentials).
+  - Notes: `tsc`/lint/unit/build all green (354/354 unit, incl. new `tests/unit/brandKitService.test.ts` + fixed `tests/unit/mcpBrandKitTools.test.ts`). Full mock E2E: ran the two directly-relevant suites for real (`team-isolation.test.ts` 19/19, `brand-kit.test.ts` 14/14) against disposable throwaway test infra — see T4.
 
 ---
 
