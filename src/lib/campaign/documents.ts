@@ -114,18 +114,20 @@ export async function collectCampaignDocsContext(campaignId: string): Promise<Do
   return buildDocsContext(docs)
 }
 
-// Presigned URLs for a campaign's uploaded reference IMAGES (the docs bucket is
-// private — the vision model fetches these server-side). Capped to keep the
-// vision payload sane.
+// Bucket/key refs for a campaign's uploaded reference IMAGES (the docs bucket
+// is private — the vision model reads these bytes server-side via S3, not a
+// presigned fetch). Capped to keep the vision payload sane.
 export const MAX_DOC_IMAGES_CONTEXT = 6
 
-export async function collectCampaignDocImageUrls(campaignId: string): Promise<string[]> {
-  const { BUCKET_DOCS, getPresignedUrl } = await import("@/lib/storage/minio")
+export async function collectCampaignDocImageRefs(
+  campaignId: string
+): Promise<{ bucket: string; key: string }[]> {
+  const { BUCKET_DOCS } = await import("@/lib/storage/minio")
   const images = await prisma.campaignDocument.findMany({
     where: { campaignId, contentType: { in: DOC_IMAGE_MIME_TYPES } },
     orderBy: { createdAt: "asc" },
     take: MAX_DOC_IMAGES_CONTEXT,
     select: { objectKey: true },
   })
-  return Promise.all(images.map((d) => getPresignedUrl(BUCKET_DOCS, d.objectKey)))
+  return images.map((d) => ({ bucket: BUCKET_DOCS, key: d.objectKey }))
 }

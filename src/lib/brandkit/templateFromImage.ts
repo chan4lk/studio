@@ -4,6 +4,7 @@ import { getImageDimensions } from '@/lib/renderer/puppeteer'
 import { dimensionsFor, nearestAspectRatio } from '@/lib/aspectRatio'
 import { stripCodeFences } from '@/lib/agent/claudeCli'
 import { MOCK_AI, buildMockTemplateHtml } from '@/lib/testHooks'
+import { BUCKET_BRANDKITS } from '@/lib/storage/minio'
 
 // F6 — turn an uploaded image into a reusable Path A HTML template. The vision
 // model studies the image's layout + aesthetic and produces a self-contained
@@ -21,7 +22,7 @@ export interface TemplateFromImageResult {
 // generate the template at that canvas size.
 export async function generateTemplateFromImage(input: {
   imageDataUrl: string
-  imageUrl: string
+  imageKey: string
   aspectRatioOverride?: AspectRatio
   teamId: string
 }): Promise<TemplateFromImageResult> {
@@ -45,7 +46,7 @@ export async function generateTemplateFromImage(input: {
   const reply = await runVisionModel({
     system,
     userMessage: 'Generate the reusable template HTML from this reference image.',
-    imageUrls: [input.imageUrl],
+    imageRefs: [{ bucket: BUCKET_BRANDKITS, key: input.imageKey }],
     maxTokens: 4096,
     label: 'image-template',
     teamId: input.teamId,
