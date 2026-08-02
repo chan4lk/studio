@@ -5,7 +5,7 @@ Index of raised feature/idea requests and their specclaw change status. Each row
 | ID | Item | Change | Phase | Notes |
 |----|------|--------|-------|-------|
 | BL-01 | Preview button on every draft revision | [preview-draft-revisions](.specclaw/changes/preview-draft-revisions/proposal.md) | ✅ Merged | [PR #2](https://github.com/chan4lk/studio/pull/2) |
-| BL-02 | Clone a post | [clone-post](.specclaw/changes/clone-post/proposal.md) | 🔵 Planned — ready to build | 4 tasks |
+| BL-02 | Clone a post | [clone-post](.specclaw/changes/clone-post/proposal.md) | ✅ Merged | [PR #4](https://github.com/chan4lk/studio/pull/4) |
 | BL-03 | Floating "start new post" button | [floating-new-post-button](.specclaw/changes/floating-new-post-button/proposal.md) | 🔵 Planned — ready to build | 2 tasks |
 | BL-04 | Fold MCP into Studio API (shared facade) | [mcp-api-facade](.specclaw/changes/mcp-api-facade/proposal.md) | 🔵 Planned — ready to build | 5 tasks; only `brandkit.ts` had real duplication — `publish.ts` confirmed already a thin adapter, out of scope |
 
