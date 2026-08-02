@@ -71,7 +71,7 @@ automation:
 
 # PR creation settings
 pr:
-  test_policy: ""   # Set on first `specclaw pr` run. Options: none | unit | e2e | both
+  test_policy: "unit"   # Set on first `specclaw pr` run. Options: none | unit | e2e | both
                     # none  — no test checks before PR creation
                     # unit  — requires unit test evidence in verify-report + build.test_command set
                     # e2e   — requires e2e test evidence in verify-report + build.test_command set
