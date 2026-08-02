@@ -1,0 +1,7 @@
+exit=0
+duration_s=32
+log=.specclaw/changes/mcp-api-facade/logs/build-npm-run-build-3156352.log
+head=fed7df63066439329a112b6dbc84f97e12579f53
+dirty=true
+cmd=npm run build
+interrupted=false
