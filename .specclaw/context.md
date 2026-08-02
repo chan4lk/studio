@@ -1,6 +1,6 @@
 # Project Context
 
-_Last updated: 2026-08-02 — clone-post_
+_Last updated: 2026-08-02 — floating-new-post-button_
 
 ## Architecture Overview
 
@@ -29,5 +29,6 @@ _Not yet documented._
 
 ## Recent Decisions
 
+- **floating-new-post-button (2026-08-02):** A persistent FAB (`NewPostFab`, mounted once in `AppShell.tsx` at the shell's top level) links every `(app)` route to `/brief`. Suppressed on `/brief` and `/choose-team` via a pathname denylist; layered at `z-30`, below the mobile sidebar overlay's `z-50`, so opening the sidebar covers it with no extra conditional state.
 - **clone-post (2026-08-02):** `cloneDraft` (`src/lib/drafts/clone.ts`) copies a source draft's Brief fields + current content into a wholly new Brief/Draft/DraftRevision-v1 tree — no AI call, no re-render, same MinIO object references (immutable per-revision). Zero `Post` rows on the clone by design (new post to review, not a copy of publish history); gated to `EXPORTED`/`PUBLISHED` sources only (`DraftNotCloneableError` → 409).
 - **preview-draft-revisions (2026-08-02):** Revision History rows get a Preview action (opens `ImageLightbox`) alongside Restore — reused the existing component rather than building a new comparison view; disabled when a revision has no `exportUrl` or is mid-restore.
