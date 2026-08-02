@@ -1,0 +1,7 @@
+exit=1
+duration_s=31
+log=.specclaw/changes/preview-draft-revisions/logs/build-npm-run-build-2982850.log
+head=eed31fedb854ac05267f983c137b900b5a9cbde0
+dirty=true
+cmd=npm run build
+interrupted=false

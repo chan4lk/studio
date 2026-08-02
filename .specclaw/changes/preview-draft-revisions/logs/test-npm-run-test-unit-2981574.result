@@ -1,0 +1,7 @@
+exit=0
+duration_s=4
+log=.specclaw/changes/preview-draft-revisions/logs/test-npm-run-test-unit-2981574.log
+head=eed31fedb854ac05267f983c137b900b5a9cbde0
+dirty=true
+cmd=npm run test:unit
+interrupted=false
