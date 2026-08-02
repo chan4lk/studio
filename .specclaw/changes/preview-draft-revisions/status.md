@@ -13,14 +13,13 @@
 | Design | 🟢 Complete | |
 | Tasks | 🟢 Complete | |
 | Build | 🟢 Complete | 2/2 tasks, no scope deviation |
-| Verify | ✅ Passed | tsc/lint/unit green (340/340); `npm run build` fails in this sandbox only — missing real `BETTER_AUTH_SECRET`/`TOKEN_ENCRYPTION_KEY` (no `.env`), same as `test:unit` needing `NODE_ENV=test` override. Not a code defect; CI has real secrets. |
+| Verify | ✅ Passed | tsc/lint/unit green (340/340), production build green |
+| PR | ✅ Merged | [#2](https://github.com/chan4lk/studio/pull/2) — squash-merged to `main` |
 
 ## Task Progress
 
 **Completed:** 2 / 2
 **Failed:** 0
-
-
 
 ## Agent Runs
 
@@ -31,4 +30,4 @@
 
 ## Issues
 
-Raised by stakeholder 2026-08-02 via Discord (BL-01, `docs/bistec-studio-backlog.md`). Build sandbox has no `.env` with real secrets — `npm run build`'s production config validation fails here regardless of code change; `tsc`/lint/unit all green.
+Raised by stakeholder 2026-08-02 via Discord (BL-01, `docs/bistec-studio-backlog.md`). Build sandbox needed a local (gitignored) `.env` with generated secrets to run the real build gate; no production credentials involved.

@@ -170,4 +170,10 @@ The build is considered v1 complete when all of the following pass:
 
 ---
 
+## Post-v1 Feature Requests (backlog, unscheduled)
+
+> **Superseded 2026-08-02 — see [`BACKLOG.md`](../BACKLOG.md) at repo root.** BL-01 through BL-04 now have specclaw proposals under `.specclaw/changes/`; root `BACKLOG.md` is the index going forward. Left here for history only.
+
+---
+
 *Document generated from `.specclaw/changes/marketing-post-studio-v1/tasks.md` · bistec-studio v1*
