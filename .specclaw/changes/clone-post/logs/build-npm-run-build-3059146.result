@@ -1,0 +1,7 @@
+exit=0
+duration_s=30
+log=.specclaw/changes/clone-post/logs/build-npm-run-build-3059146.log
+head=b43983864f3b94ebce348f621f394200de6b7862
+dirty=true
+cmd=npm run build
+interrupted=false
