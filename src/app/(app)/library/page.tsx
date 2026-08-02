@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
 import { toast } from 'sonner'
@@ -57,6 +58,7 @@ function SkeletonCard() {
 
 export default function LibraryPage() {
   const queryClient = useQueryClient()
+  const router = useRouter()
   const confirm = useConfirm()
   const [activeStatus, setActiveStatus] = useState<StatusFilter>('ALL')
   const [searchInput, setSearchInput] = useState('')
@@ -118,6 +120,19 @@ export default function LibraryPage() {
   async function handleRetry(postId: string) {
     await apiFetch(`/api/posts/${postId}/publish`, { method: 'POST' })
     invalidateLibrary()
+  }
+
+  async function handleClone(draftId: string) {
+    try {
+      const { draftId: newDraftId } = await apiFetch<{ draftId: string }>(`/api/drafts/${draftId}/clone`, {
+        method: 'POST',
+      })
+      toast.success('Post cloned')
+      invalidateLibrary()
+      router.push(`/drafts/${newDraftId}`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Clone failed')
+    }
   }
 
   async function handleDelete(draftId: string) {
@@ -205,6 +220,7 @@ export default function LibraryPage() {
                   setSelectedDraft({ id: draftId, posts: posts as PostRecord[] })
                 }
                 onDelete={handleDelete}
+                onClone={handleClone}
               />
             ))}
           </div>

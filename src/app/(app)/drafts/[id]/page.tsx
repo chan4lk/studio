@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import {
@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Pencil,
   Eye,
+  Copy,
 } from 'lucide-react'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { Button } from '@/components/ui/Button'
@@ -53,6 +54,7 @@ const STATUS_TO_CHIP: Record<DraftDetail['status'], 'draft' | 'exported' | 'publ
 
 export default function DraftDetailPage() {
   const params = useParams<{ id: string }>()
+  const router = useRouter()
   const draftId = params.id
 
   const [draft, setDraft] = useState<DraftDetail | null>(null)
@@ -61,6 +63,7 @@ export default function DraftDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [retrying, setRetrying] = useState(false)
+  const [cloning, setCloning] = useState(false)
   const [restoringRev, setRestoringRev] = useState<number | null>(null)
   const [previewRevision, setPreviewRevision] = useState<Revision | null>(null)
   const { isTeamAdmin } = useCurrentUser()
@@ -148,6 +151,21 @@ export default function DraftDetailPage() {
       toast.error(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
       setRestoringRev(null)
+    }
+  }
+
+  async function handleClone() {
+    setCloning(true)
+    try {
+      const { draftId: newDraftId } = await apiFetch<{ draftId: string }>(`/api/drafts/${draftId}/clone`, {
+        method: 'POST',
+      })
+      toast.success('Post cloned')
+      router.push(`/drafts/${newDraftId}`)
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Clone failed')
+    } finally {
+      setCloning(false)
     }
   }
 
@@ -405,6 +423,16 @@ export default function DraftDetailPage() {
                   Publish
                 </Button>
               )}
+              <Button
+                variant="secondary"
+                size="sm"
+                title={draft.status === 'EXPORTED' || draft.status === 'PUBLISHED' ? 'Clone this post' : 'Clone unavailable until generation finishes'}
+                disabled={cloning || (draft.status !== 'EXPORTED' && draft.status !== 'PUBLISHED')}
+                onClick={handleClone}
+              >
+                {cloning ? <Loader2 size={13} className="animate-spin" /> : <Copy size={13} />}
+                Clone
+              </Button>
             </div>
 
             {/* Regenerate design — Path B (freeform) only. Produces a fresh design

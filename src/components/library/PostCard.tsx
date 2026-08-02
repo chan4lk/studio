@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { ImageIcon, Trash2, Maximize2 } from 'lucide-react'
+import { ImageIcon, Trash2, Maximize2, Copy } from 'lucide-react'
 import { GlassPanel } from '@/components/ui/GlassPanel'
 import { Button } from '@/components/ui/Button'
 import { StatusChip } from '@/components/ui/StatusChip'
@@ -36,6 +36,8 @@ interface PostCardProps {
   onViewHistory: (draftId: string, posts: PostSummary[]) => void
   // Admin-only hard delete (button hidden when omitted).
   onDelete?: (draftId: string) => void
+  // Clone into a new independent draft (button hidden when omitted).
+  onClone?: (draftId: string) => void
 }
 
 type ChipStatus = 'draft' | 'exported' | 'scheduled' | 'published' | 'failed'
@@ -53,7 +55,7 @@ function deriveStatus(draft: PostCardDraft): ChipStatus {
   return 'draft'
 }
 
-export function PostCard({ draft, isTeamAdmin, onPublish, onViewHistory, onDelete }: PostCardProps) {
+export function PostCard({ draft, isTeamAdmin, onPublish, onViewHistory, onDelete, onClone }: PostCardProps) {
   const chipStatus = deriveStatus(draft)
   const [showPreview, setShowPreview] = useState(false)
 
@@ -157,6 +159,19 @@ export function PostCard({ draft, isTeamAdmin, onPublish, onViewHistory, onDelet
           >
             History
           </Button>
+          {onClone && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Clone ${draft.brief.topic}`}
+              title={draft.status === 'EXPORTED' || draft.status === 'PUBLISHED' ? 'Clone this post' : 'Clone unavailable until generation finishes'}
+              className="px-2"
+              disabled={draft.status !== 'EXPORTED' && draft.status !== 'PUBLISHED'}
+              onClick={() => onClone(draft.id)}
+            >
+              <Copy size={15} />
+            </Button>
+          )}
           {isTeamAdmin && onDelete && (
             <Button
               variant="ghost"
