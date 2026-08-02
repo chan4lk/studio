@@ -27,6 +27,17 @@ vi.mock('@/lib/prisma', () => ({
       create: mocks.brandKitPromptCreate,
     },
     brandKitTemplate: { create: mocks.brandKitTemplateCreate },
+    // setBrandKitPromptForTeam's version-allocation runs inside $transaction;
+    // the mocked tx exposes the same brandKitPrompt fns as the top-level mock.
+    $transaction: vi.fn((cb) =>
+      cb({
+        brandKitPrompt: {
+          findFirst: mocks.brandKitPromptFindFirst,
+          updateMany: mocks.brandKitPromptUpdateMany,
+          create: mocks.brandKitPromptCreate,
+        },
+      })
+    ),
   },
 }))
 
@@ -103,7 +114,8 @@ describe('MCP brand-kit tools — team scoping (final review C2)', () => {
         id: 'kit-a',
         name: 'A',
         templates: [],
-        prompts: [{ content: 'voice', version: 1 }],
+        artifacts: [],
+        prompts: [{ content: 'voice', version: 1, isActive: true }],
       })
       const result = await getBrandKit({ id: 'kit-a', teamId: TEAM_A })
       expect(result.activePrompt).toEqual({ content: 'voice', version: 1 })

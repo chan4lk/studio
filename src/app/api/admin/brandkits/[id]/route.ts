@@ -2,23 +2,20 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { withTeamAdmin, parseBody } from '@/lib/api/handler'
+import { getBrandKitForTeam, BrandKitNotFoundError } from '@/lib/brandkit/service'
 
 type Params = { id: string }
 
 export const GET = withTeamAdmin<Params>(async (_req, { params }, user) => {
-  const kit = await prisma.brandKit.findUnique({
-    where: { id: params.id },
-    include: {
-      prompts: { orderBy: { version: 'desc' } },
-      templates: { orderBy: { createdAt: 'asc' } },
-      artifacts: { orderBy: { createdAt: 'desc' } },
-    },
-  })
-
-  if (!kit || kit.isDeleted || kit.teamId !== user.teamId) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  try {
+    const kit = await getBrandKitForTeam(user.teamId, params.id)
+    return NextResponse.json(kit)
+  } catch (err) {
+    if (err instanceof BrandKitNotFoundError) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+    throw err
   }
-  return NextResponse.json(kit)
 })
 
 const patchSchema = z.object({

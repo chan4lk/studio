@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { withTeamAdmin, parseBody } from '@/lib/api/handler'
+import { uploadBrandTemplateForTeam, BrandKitNotFoundError } from '@/lib/brandkit/service'
 
 type Params = { id: string }
 
@@ -33,26 +34,23 @@ const createSchema = z.object({
 })
 
 export const POST = withTeamAdmin<Params>(async (req, { params }, user) => {
-  const kit = await prisma.brandKit.findFirst({
-    where: { id: params.id, isDeleted: false },
-    select: { id: true, teamId: true },
-  })
-  if (!kit || kit.teamId !== user.teamId) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
-
   const body = await parseBody(req, createSchema)
   if (body.response) return body.response
   const { name, htmlTemplate, aspectRatio } = body.data
 
-  const template = await prisma.brandKitTemplate.create({
-    data: {
+  try {
+    const template = await uploadBrandTemplateForTeam({
+      teamId: user.teamId,
       brandKitId: params.id,
       name,
       htmlTemplate,
-      aspectRatio: aspectRatio ?? 'SQUARE',
-    },
-  })
-
-  return NextResponse.json(template, { status: 201 })
+      aspectRatio,
+    })
+    return NextResponse.json(template, { status: 201 })
+  } catch (err) {
+    if (err instanceof BrandKitNotFoundError) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+    throw err
+  }
 })
