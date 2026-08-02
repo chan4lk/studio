@@ -14,6 +14,7 @@
 | Tasks | 🟢 Complete | |
 | Build | 🟢 Complete | 5/5 tasks; T4 (isolation E2E) blocked — see verify-report |
 | Verify | 🟡 Partial | tsc/lint/unit(354)/build all green; `tests/e2e/team-isolation.test.ts` NOT run — no test DB in this sandbox, and pulling live container credentials to build one was correctly blocked. Manual where-clause regression review done instead (see verify-report table). **Recommend running the real isolation suite before/at merge.** |
+| PR | 🟡 Open, awaiting go-ahead | [#6](https://github.com/chan4lk/studio/pull/6) — NOT merged, holding for explicit confirmation given the unverified isolation gate |
 
 ## Task Progress
 
