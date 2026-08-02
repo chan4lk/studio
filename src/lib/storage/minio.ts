@@ -193,12 +193,35 @@ export function publicUrl(bucket: string, key: string): string {
   return `${publicEndpoint}/${bucket}/${key}`
 }
 
+// Rewrites one of our own publicUrl()-produced URLs to the internal endpoint,
+// for server-side fetches that must stay in-container (e.g. color sampling)
+// rather than round-trip through the public hostname/DNS. Public-bucket URLs
+// embedded in generated HTML for Puppeteer rendering intentionally keep the
+// public endpoint (the renderer needs the same reachability a saved design
+// requires when re-rendered) — this helper is only for direct server-side
+// object reads of our own storage, not for anything embedded/rendered.
+export function toInternalFetchUrl(url: string): string {
+  if (publicEndpoint === endpoint.replace(/\/+$/, "")) return url
+  return url.startsWith(publicEndpoint) ? endpoint.replace(/\/+$/, "") + url.slice(publicEndpoint.length) : url
+}
+
 // Every EXPORTS object key comes from here — one namespaced format per render
 // kind, so lifecycle policies and debugging-by-prefix work across the bucket.
 export type ExportKind = "design" | "refine" | "restore" | "export" | "cli"
 
 export function exportKey(kind: ExportKind, id: string): string {
   return `exports/${kind}-${id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`
+}
+
+// Reads an object's bytes directly via the internal S3 client — for server-side
+// code that needs its own storage's bytes (color sampling, vision ingestion,
+// re-uploading an export elsewhere) and has no reason to round-trip through the
+// public hostname. Never touches MINIO_PUBLIC_ENDPOINT or its DNS.
+export async function getObjectBuffer(bucket: string, key: string): Promise<Buffer> {
+  const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+  const bytes = await res.Body?.transformToByteArray()
+  if (!bytes) throw new Error(`Empty object body: ${bucket}/${key}`)
+  return Buffer.from(bytes)
 }
 
 // Persists a base64 `data:` image URL into the public IMAGES bucket and returns
