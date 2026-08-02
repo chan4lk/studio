@@ -1,0 +1,7 @@
+exit=0
+duration_s=32
+log=.specclaw/changes/floating-new-post-button/logs/build-npm-run-build-3095484.log
+head=b06de8e601bb2f3d340413adf699f6b5321413c1
+dirty=true
+cmd=npm run build
+interrupted=false

@@ -1,0 +1,7 @@
+exit=0
+duration_s=13
+log=.specclaw/changes/floating-new-post-button/logs/lint-npm-run-lint-3094931.log
+head=b06de8e601bb2f3d340413adf699f6b5321413c1
+dirty=true
+cmd=npm run lint
+interrupted=false

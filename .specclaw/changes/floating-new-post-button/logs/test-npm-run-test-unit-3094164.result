@@ -1,0 +1,7 @@
+exit=0
+duration_s=4
+log=.specclaw/changes/floating-new-post-button/logs/test-npm-run-test-unit-3094164.log
+head=b06de8e601bb2f3d340413adf699f6b5321413c1
+dirty=true
+cmd=npm run test:unit
+interrupted=false
