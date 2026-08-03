@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import type { AspectRatio } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { withTeamAuth, parseBody } from '@/lib/api/handler'
 import { canAccessContent } from '@/lib/authz/visibility'
@@ -8,6 +9,27 @@ import { uploadObject, resolveExportUrl, exportKey, BUCKET_EXPORTS } from '@/lib
 import { dimensionsFor } from '@/lib/aspectRatio'
 
 const bodySchema = z.object({ draftId: z.string() })
+
+// Renders and stores a draft's PNG, given it has no exportUrl yet (callers
+// check that first — see below). Shared by this route and the pptx export
+// route so both agree on how a draft becomes EXPORTED.
+export async function renderAndStoreExport(
+  draftId: string,
+  htmlContent: string,
+  aspectRatio: AspectRatio | null | undefined
+): Promise<string> {
+  const { width, height } = dimensionsFor(aspectRatio)
+  const buffer = await renderHtmlToPng(htmlContent, width, height)
+  const key = exportKey('export', draftId)
+  await uploadObject(buffer, BUCKET_EXPORTS, key, 'image/png')
+
+  await prisma.draft.update({
+    where: { id: draftId },
+    data: { exportUrl: key, status: 'EXPORTED' },
+  })
+
+  return key
+}
 
 export const POST = withTeamAuth(async (req: NextRequest, _ctx, user) => {
   const body = await parseBody(req, bodySchema)
@@ -34,15 +56,6 @@ export const POST = withTeamAuth(async (req: NextRequest, _ctx, user) => {
     return NextResponse.json({ error: 'Draft has no HTML content to export' }, { status: 422 })
   }
 
-  const { width, height } = dimensionsFor(draft.brief.aspectRatio)
-  const buffer = await renderHtmlToPng(draft.htmlContent, width, height)
-  const key = exportKey('export', draftId)
-  await uploadObject(buffer, BUCKET_EXPORTS, key, 'image/png')
-
-  await prisma.draft.update({
-    where: { id: draftId },
-    data: { exportUrl: key, status: 'EXPORTED' },
-  })
-
+  const key = await renderAndStoreExport(draftId, draft.htmlContent, draft.brief.aspectRatio)
   return NextResponse.json({ exportUrl: await resolveExportUrl(key) })
 })
