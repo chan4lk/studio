@@ -3,9 +3,13 @@ name: Build and push Docker image
 # Single image serves both the web app and the scheduler worker (the
 # scheduler service just overrides CMD — see docker-compose.yml). Coolify
 # pulls the same tag for both resources.
+#
+# Disabled on push: this workflow deploys to the original repo's Coolify
+# instance (COOLIFY_API_TOKEN + hardcoded resource UUIDs below) and always
+# 401s / is meaningless in a fork. Re-enable the push trigger if this repo
+# ever owns its own Coolify deploy target.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch: {}
 
 env:
   REGISTRY: ghcr.io
