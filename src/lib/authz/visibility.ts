@@ -17,6 +17,14 @@ export function draftVisibilityWhere(u: TeamAuthedUser) {
   }
 }
 
+// Deck carries its own userId/campaignId/teamId directly (same shape as
+// Brief, not a relation to walk like Draft->brief) — same D6 semantics:
+// own + campaign-shared for editors, all-team for admin/super-admin.
+export function deckVisibilityWhere(u: TeamAuthedUser) {
+  if (isTeamWide(u)) return { teamId: u.teamId }
+  return { teamId: u.teamId, OR: [{ userId: u.userId }, { campaignId: { not: null } }] }
+}
+
 export function postVisibilityWhere(u: TeamAuthedUser) {
   if (isTeamWide(u)) return { teamId: u.teamId }
   return {
