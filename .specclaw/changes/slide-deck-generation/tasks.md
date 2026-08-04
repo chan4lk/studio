@@ -12,34 +12,34 @@
 
 ### Wave 1 — Data model + core generation orchestration
 
-- [ ] `T1` — Prisma schema: `Deck`, `DeckSlide`, `DeckStatus`
+- [x] `T1` — Prisma schema: `Deck`, `DeckSlide`, `DeckStatus`
   - Files: `prisma/schema.prisma`, new migration under `prisma/migrations/`
   - Estimate: small
   - Kind: migration
   - Notes: Exact shape in design.md § Data Model Changes. `DeckSlide.draftId` unique FK to `Draft`; `@@unique([deckId, orderIndex])`. No new column on `Brief` or `Draft`. Run `npx prisma migrate dev` to generate, verify against a local DB.
 
-- [ ] `T2` — `src/lib/deck/outline.ts` — AI outline proposal
+- [x] `T2` — `src/lib/deck/outline.ts` — AI outline proposal
   - Files: `src/lib/deck/outline.ts`, `src/lib/deck/constants.ts` (`MAX_DECK_SLIDES = 15`)
   - Estimate: medium
   - Kind: impl
   - Depends: T1
   - Notes: `proposeDeckOutline(deck, kit, actor): Promise<{ slides: { topic: string; hint: string }[] }>` — Haiku call, capped at `MAX_DECK_SLIDES`, falls back to a single generic slide if the model returns zero (Edge Case in spec.md). Mirror `extractSchedulePlan`'s block-parsing + zod-validation style from `src/lib/campaign/briefingAssistant.ts`.
 
-- [ ] `T3` — `src/lib/deck/generateDeck.ts` — batch slide creation + fan-out generation
+- [x] `T3` — `src/lib/deck/generateDeck.ts` — batch slide creation + fan-out generation
   - Files: `src/lib/deck/generateDeck.ts`
   - Estimate: medium
   - Kind: impl
   - Depends: T1
   - Notes: `approveDeckOutline(deckId, outline, actor)` — per approved slide: create a plain `Brief` row (deck's brandKitId/campaignId/aspectRatio/designMode/tone/goal, topic = slide hint), `createPendingDraft(brief)`, a `DeckSlide` row (deckId, draftId, orderIndex, topic), then `startBackgroundGeneration(draftId, userId, teamId)` — reuse these three existing functions unmodified. Wrap the per-slide row creation (Brief+Draft+DeckSlide) in one `$transaction` per slide so a slide never exists half-created; the N slides' _generation_ fan-out itself is fire-and-forget and independent (no cross-slide transaction).
 
-- [ ] `T4` — `src/lib/deck/deckActions.ts` — per-slide regenerate wrapper
+- [x] `T4` — `src/lib/deck/deckActions.ts` — per-slide regenerate wrapper
   - Files: `src/lib/deck/deckActions.ts`
   - Estimate: small
   - Kind: impl
   - Depends: T1
   - Notes: Thin delegation to existing `claimDraftAction`/`startDraftAction` (`src/lib/drafts/draftActions.ts`), resolving a `DeckSlide` to its `draftId` first and checking the slide belongs to the given deck. No new claim/lock semantics — reuses the existing atomic per-Draft claim as-is.
 
-- [ ] `T5` — `src/lib/authz/visibility.ts` — deck visibility
+- [x] `T5` — `src/lib/authz/visibility.ts` — deck visibility
   - Files: `src/lib/authz/visibility.ts`
   - Estimate: small
   - Kind: impl
@@ -48,21 +48,21 @@
 
 ### Wave 2 — API routes
 
-- [ ] `T6` — `POST /api/decks`, `GET /api/decks/[id]`
+- [x] `T6` — `POST /api/decks`, `GET /api/decks/[id]`
   - Files: `src/app/api/decks/route.ts`, `src/app/api/decks/[id]/route.ts`
   - Estimate: medium
   - Kind: impl
   - Depends: T1, T5
   - Notes: `withTeamAuth` + zod `parseBody` per existing route convention (`src/lib/api/handler.ts`). GET returns deck + slides with each slide's draft status/exportUrl/failureReason for polling.
 
-- [ ] `T7` — `POST /api/decks/[id]/outline`, `POST /api/decks/[id]/outline/approve`
+- [x] `T7` — `POST /api/decks/[id]/outline`, `POST /api/decks/[id]/outline/approve`
   - Files: `src/app/api/decks/[id]/outline/route.ts`, `src/app/api/decks/[id]/outline/approve/route.ts`
   - Estimate: medium
   - Kind: impl
   - Depends: T2, T3, T6
   - Notes: `outline` route calls `proposeDeckOutline`, stores result on `Deck.proposedOutline`, sets status `OUTLINE_READY`, returns 202. `approve` route validates the (possibly user-edited) outline against `MAX_DECK_SLIDES` and a minimum of 1, calls `approveDeckOutline`, returns 202.
 
-- [ ] `T8` — `POST /api/decks/[id]/slides/[slideId]/regenerate-design`
+- [x] `T8` — `POST /api/decks/[id]/slides/[slideId]/regenerate-design`
   - Files: `src/app/api/decks/[id]/slides/[slideId]/regenerate-design/route.ts`
   - Estimate: small
   - Kind: impl
@@ -71,14 +71,14 @@
 
 ### Wave 3 — UI
 
-- [ ] `T9` — Deck brief wizard
+- [x] `T9` — Deck brief wizard
   - Files: new `src/components/deck/*` (adapt `CampaignStep`, size/design step, `ImagesStep` from `src/components/brief/*`; new `OutlineReviewStep`), `src/app/(app)/deck-brief/page.tsx` (or equivalent route)
   - Estimate: large
   - Kind: impl
   - Depends: T6, T7
   - Notes: Steps: brief inputs (topic/prompt/brand kit/campaign/tone/goal/images, no manual slide count) → submit → outline proposal (loading state) → `OutlineReviewStep` (add/remove/edit/reorder proposed slides) → approve → navigate to deck review page.
 
-- [ ] `T10` — Deck review page
+- [~] `T10` — Deck review page
   - Files: `src/app/(app)/decks/[id]/page.tsx`, `src/components/deck/DeckReview*.tsx`
   - Estimate: large
   - Kind: impl
