@@ -5,6 +5,7 @@ import { withTeamAuth } from '@/lib/api/handler'
 import { canAccessContent } from '@/lib/authz/visibility'
 import { resolveBrandKit } from '@/lib/brandkit/resolve'
 import { proposeDeckOutline } from '@/lib/deck/outline'
+import { withClaudeAuth } from '@/lib/agent/userToken'
 
 type Params = { id: string }
 
@@ -27,7 +28,9 @@ export const POST = withTeamAuth<Params>(async (_req, { params }, user) => {
   }
 
   const kit = await resolveBrandKit(deck.teamId, deck.campaignId ?? undefined, deck.brandKitId ?? undefined)
-  const outline = await proposeDeckOutline(deck, kit, { userId: user.userId, teamId: user.teamId })
+  const outline = await withClaudeAuth(user.userId, user.teamId, () =>
+    proposeDeckOutline(deck, kit, { userId: user.userId, teamId: user.teamId })
+  )
 
   await prisma.deck.update({
     where: { id: deck.id },
