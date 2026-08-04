@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { ImageIcon, Trash2, Maximize2, Copy } from 'lucide-react'
+import { toast } from 'sonner'
+import { ImageIcon, Trash2, Maximize2, Copy, Presentation, Loader2 } from 'lucide-react'
 import { GlassPanel } from '@/components/ui/GlassPanel'
 import { Button } from '@/components/ui/Button'
 import { StatusChip } from '@/components/ui/StatusChip'
@@ -10,6 +11,7 @@ import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import type { AspectRatio } from '@prisma/client'
 import { aspectClassFor } from '@/lib/aspectRatio'
 import { channelLabel } from '@/lib/channels'
+import { downloadBlobFrom } from '@/lib/download'
 
 interface PostSummary {
   id: string
@@ -58,6 +60,18 @@ function deriveStatus(draft: PostCardDraft): ChipStatus {
 export function PostCard({ draft, isTeamAdmin, onPublish, onViewHistory, onDelete, onClone }: PostCardProps) {
   const chipStatus = deriveStatus(draft)
   const [showPreview, setShowPreview] = useState(false)
+  const [exportingPptx, setExportingPptx] = useState(false)
+
+  async function handleExportPptx() {
+    setExportingPptx(true)
+    try {
+      await downloadBlobFrom(`/api/drafts/${draft.id}/export/pptx`, `${draft.brief.topic}.pptx`, { method: 'POST' })
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Something went wrong')
+    } finally {
+      setExportingPptx(false)
+    }
+  }
 
   return (
     <GlassPanel className="flex flex-col overflow-hidden">
@@ -170,6 +184,19 @@ export function PostCard({ draft, isTeamAdmin, onPublish, onViewHistory, onDelet
               onClick={() => onClone(draft.id)}
             >
               <Copy size={15} />
+            </Button>
+          )}
+          {draft.exportUrl && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Export ${draft.brief.topic} as PPTX`}
+              title="Export as PPTX"
+              className="px-2"
+              disabled={exportingPptx}
+              onClick={handleExportPptx}
+            >
+              {exportingPptx ? <Loader2 size={15} className="animate-spin" /> : <Presentation size={15} />}
             </Button>
           )}
           {isTeamAdmin && onDelete && (

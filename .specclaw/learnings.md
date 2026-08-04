@@ -90,3 +90,20 @@ When a task changes an API contract, enumerate every test suite asserting the ol
 After rotating credentials in .env, diff .env.test against the CI workflow env to catch dropped keys
 
 ---
+
+## [L6] design_gap — design.md's ensureDraftExported() was specified to also e...
+
+**When:** 2026-08-03 18:12 UTC
+**Category:** design_gap
+**Priority:** low
+**Status:** pending
+
+### Detail
+
+design.md's ensureDraftExported() was specified to also encapsulate the '!htmlContent' 422 check inside the helper (throwing on missing html); implementation instead kept that check in each calling route (renderAndStoreExport only handles the render+store side effect) so each route controls its own HTTP status code (422 vs 500) without the helper needing to distinguish error types.
+
+### Action
+
+No action needed — the resulting contract is equivalent and both routes independently verified against spec ACs; note for future planners that a shared helper mixing a side effect with an HTTP-status-relevant validation is better split at the route layer.
+
+---

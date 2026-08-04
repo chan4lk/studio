@@ -17,6 +17,7 @@ import {
   Pencil,
   Eye,
   Copy,
+  Presentation,
 } from 'lucide-react'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import { Button } from '@/components/ui/Button'
@@ -27,6 +28,7 @@ import { CopyEditor } from '@/components/drafts/CopyEditor'
 import { RefinementPanel } from '@/components/drafts/RefinementPanel'
 import { InlineEditModal } from '@/components/drafts/InlineEditModal'
 import { apiFetch } from '@/lib/apiFetch'
+import { downloadBlobFrom } from '@/lib/download'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { useUndoableAction } from '@/lib/hooks/useUndoableAction'
 import type { DraftAction, DraftDetail } from '@/lib/api-types'
@@ -62,6 +64,7 @@ export default function DraftDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [exportingPptx, setExportingPptx] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [cloning, setCloning] = useState(false)
   const [restoringRev, setRestoringRev] = useState<number | null>(null)
@@ -139,6 +142,17 @@ export default function DraftDetailPage() {
       toast.error(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
       setExporting(false)
+    }
+  }
+
+  async function handleExportPptx() {
+    setExportingPptx(true)
+    try {
+      await downloadBlobFrom(`/api/drafts/${draftId}/export/pptx`, `${draft?.brief.topic ?? 'export'}.pptx`, { method: 'POST' })
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Something went wrong')
+    } finally {
+      setExportingPptx(false)
     }
   }
 
@@ -411,6 +425,20 @@ export default function DraftDetailPage() {
                   <Download size={13} />
                 )}
                 {draft.exportUrl ? 'Re-export' : 'Export'}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="flex-1"
+                onClick={handleExportPptx}
+                disabled={exportingPptx || !draft.htmlContent || actionPending}
+              >
+                {exportingPptx ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Presentation size={13} />
+                )}
+                Export as PPTX
               </Button>
               {isTeamAdmin && (
                 <Button

@@ -1,0 +1,7 @@
+exit=1
+duration_s=4
+log=.specclaw/changes/pptx-slide-export/logs/test-npm-run-test-unit-2265951.log
+head=d52897be5fe9a71b5148146d098b272f0624a9af
+dirty=true
+cmd=npm run test:unit
+interrupted=false

@@ -1,0 +1,7 @@
+exit=0
+duration_s=31
+log=.specclaw/changes/pptx-slide-export/logs/build-npm-run-build-2267127.log
+head=d52897be5fe9a71b5148146d098b272f0624a9af
+dirty=true
+cmd=npm run build
+interrupted=false
