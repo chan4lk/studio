@@ -16,6 +16,10 @@ import { loginAs, type ApiClient } from '../helpers/api'
 // Requires MOCK_AI + MOCK_PUPPETEER to mint decks deterministically.
 
 const MOCKED = () => !!(process.env.MOCK_AI && process.env.MOCK_PUPPETEER)
+// Export URLs are presigned at read time (H10) — the query string (date/sig)
+// changes on every GET even for the same underlying object, so "unchanged"
+// comparisons must strip it first (same convention as async-actions.test.ts).
+const urlPath = (u: unknown) => String(u ?? '').split('?')[0]
 const ADMIN_EMAIL = 'admin@bisteccare.lk'
 const ADMIN_PASSWORD = 'BistecStudio2026!'
 const EDITOR_EMAIL = 'editor@bisteccare.lk'
@@ -38,7 +42,7 @@ interface DeckRow {
   id: string
   status: string
   campaignId: string | null
-  proposedOutline: { topic: string; hint: string }[] | null
+  proposedOutline: { slides: { topic: string; hint: string }[] } | null
   slides: DeckSlideRow[]
 }
 
@@ -78,7 +82,7 @@ async function waitForSlideExportChange(
   for (;;) {
     const deck = (await (await api.get(`/api/decks/${deckId}`)).json()) as DeckRow
     const slide = deck.slides.find((s) => s.id === slideId)!
-    if (slide.exportUrl && slide.exportUrl !== previousExportUrl) return slide
+    if (slide.exportUrl && urlPath(slide.exportUrl) !== urlPath(previousExportUrl)) return slide
     if (Date.now() > deadline) return slide
     await sleep(intervalMs)
   }
@@ -137,12 +141,12 @@ test.describe('§U — slide deck generation', () => {
     const proposed = (await (await api.get(`/api/decks/${deckId}`)).json()) as DeckRow
     expect(proposed.status).toBe('OUTLINE_READY')
     expect(proposed.proposedOutline).toBeTruthy()
-    expect(proposed.proposedOutline!.length).toBeGreaterThanOrEqual(1)
+    expect(proposed.proposedOutline!.slides.length).toBeGreaterThanOrEqual(1)
 
     // 2. Edit the proposed outline before approving: keep the first slide's
     // topic but rewrite its hint, and add a second slide entirely.
     const editedOutline = [
-      { topic: proposed.proposedOutline![0].topic, hint: 'Edited by the reviewer before approving' },
+      { topic: proposed.proposedOutline!.slides[0].topic, hint: 'Edited by the reviewer before approving' },
       { topic: 'Roadmap details', hint: 'A second slide added during review' },
     ]
     const approveRes = await api.post(`/api/decks/${deckId}/outline/approve`, { slides: editedOutline })
@@ -171,10 +175,12 @@ test.describe('§U — slide deck generation', () => {
 
     const regenerated = await waitForSlideExportChange(api, deckId, targetSlide.id, targetSlide.exportUrl)
     expect(regenerated.status).toBe('EXPORTED')
-    expect(regenerated.exportUrl).not.toBe(targetSlide.exportUrl)
+    expect(urlPath(regenerated.exportUrl)).not.toBe(urlPath(targetSlide.exportUrl))
 
     const afterRegen = (await (await api.get(`/api/decks/${deckId}`)).json()) as DeckRow
-    expect(afterRegen.slides.find((s) => s.id !== targetSlide.id)?.exportUrl).toBe(untouchedSlideExportBefore)
+    expect(urlPath(afterRegen.slides.find((s) => s.id !== targetSlide.id)?.exportUrl)).toBe(
+      urlPath(untouchedSlideExportBefore),
+    )
 
     // A second action while one is in flight on the SAME slide is a 409 (the
     // per-slide claim reuses the existing single-Draft claim exactly).
@@ -221,7 +227,7 @@ test.describe('§U — slide deck generation', () => {
       const id = await createDeck(api, { topic, campaignId })
       await api.post(`/api/decks/${id}/outline`, {})
       const proposed = (await (await api.get(`/api/decks/${id}`)).json()) as DeckRow
-      await api.post(`/api/decks/${id}/outline/approve`, { slides: proposed.proposedOutline })
+      await api.post(`/api/decks/${id}/outline/approve`, { slides: proposed.proposedOutline!.slides })
       return waitForAllSlides(api, id)
     }
     const deckA = await generateSingleSlideDeck(`Deck E2E A ${label}`)

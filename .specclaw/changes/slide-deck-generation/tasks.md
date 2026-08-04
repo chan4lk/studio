@@ -78,14 +78,14 @@
   - Depends: T6, T7
   - Notes: Steps: brief inputs (topic/prompt/brand kit/campaign/tone/goal/images, no manual slide count) → submit → outline proposal (loading state) → `OutlineReviewStep` (add/remove/edit/reorder proposed slides) → approve → navigate to deck review page.
 
-- [~] `T10` — Deck review page
+- [x] `T10` — Deck review page
   - Files: `src/app/(app)/decks/[id]/page.tsx`, `src/components/deck/DeckReview*.tsx`
   - Estimate: large
   - Kind: impl
   - Depends: T6, T8
   - Notes: Grid of slide thumbnails with per-slide status (pending/generating/ready/failed), regenerate action per slide (reuses T8), delete-slide action (re-indexes `orderIndex` via transaction), "Export as PPTX" button — disabled/explains-why until every slide is `EXPORTED` (per design.md Key Decisions).
 
-- [ ] `T11` — "New Slide Deck" entry point
+- [x] `T11` — "New Slide Deck" entry point
   - Files: `src/components/layout/NewPostFab.tsx` (or `AppShell.tsx`)
   - Estimate: small
   - Kind: impl
@@ -94,14 +94,14 @@
 
 ### Wave 4 — Export, tests, docs
 
-- [ ] `T12` — Multi-slide PPTX export
+- [x] `T12` — Multi-slide PPTX export
   - Files: `src/lib/export/pptx.ts` (factor out shared `addImageSlide` helper, add `buildMultiSlidePptxBuffer`), `src/app/api/decks/[id]/export/pptx/route.ts`
   - Estimate: medium
   - Kind: impl
   - Depends: T1, T5
   - Notes: 422 if any `DeckSlide`'s `Draft.status !== 'EXPORTED'`; else fetch each slide's PNG from the EXPORTS bucket in `orderIndex` order, `addImageSlide` per slide, return one `.pptx` buffer. Reuses the existing single-slide route's auth/visibility/bucket-fetch code, factored rather than duplicated.
 
-- [ ] `T13` — Tests + docs/catalog entry
+- [x] `T13` — Tests + docs/catalog entry
   - Files: `tests/unit/deck/*.test.ts`, `tests/e2e/deck-generation.test.ts`, `docs/e2e-test-plan.md`, `BACKLOG.md` (BL-07 status), `CLAUDE.md` (Outstanding work entry)
   - Estimate: large
   - Kind: test
