@@ -3,6 +3,7 @@ import {
   briefVisibilityWhere,
   draftVisibilityWhere,
   postVisibilityWhere,
+  deckVisibilityWhere,
   canAccessContent,
 } from '@/lib/authz/visibility'
 
@@ -14,6 +15,7 @@ describe('visibility where-shapes', () => {
     expect(briefVisibilityWhere(admin)).toEqual({ teamId: 't1' })
     expect(draftVisibilityWhere(admin)).toEqual({ teamId: 't1' })
     expect(postVisibilityWhere(admin)).toEqual({ teamId: 't1' })
+    expect(deckVisibilityWhere(admin)).toEqual({ teamId: 't1' })
   })
   it('editor sees own things plus anything under a campaign', () => {
     expect(briefVisibilityWhere(editor)).toEqual({
@@ -27,6 +29,10 @@ describe('visibility where-shapes', () => {
     expect(postVisibilityWhere(editor)).toEqual({
       teamId: 't1',
       OR: [{ userId: 'e' }, { draft: { brief: { campaignId: { not: null } } } }],
+    })
+    expect(deckVisibilityWhere(editor)).toEqual({
+      teamId: 't1',
+      OR: [{ userId: 'e' }, { campaignId: { not: null } }],
     })
   })
 })

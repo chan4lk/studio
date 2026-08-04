@@ -98,6 +98,19 @@ enum ArtifactType {
   OTHER
 }
 
+// Lifecycle of a Deck's outline-then-fanout flow (mirrors nothing on Brief —
+// a Deck is brief-shaped input that fans out into N independent per-slide
+// Briefs/Drafts). Slide-level failures live on the per-slide Draft, not here;
+// FAILED means the outline proposal step itself failed.
+enum DeckStatus {
+  DRAFTING
+  PROPOSING_OUTLINE
+  OUTLINE_READY
+  GENERATING
+  READY
+  FAILED
+}
+
 // ── better-auth models ────────────────────────────────────────────────────
 
 model User {
@@ -129,6 +142,7 @@ model User {
   briefDrafts   BriefDraft[]
   teamMemberships TeamMembership[]
   openAiKey     UserOpenAiKey?
+  decks         Deck[]
 }
 
 // An UNFINISHED brief-wizard session (autosaved working state), NOT a Brief:
@@ -306,6 +320,7 @@ model Campaign {
   briefings    CampaignBriefing[]
   scheduledGenerations ScheduledGeneration[]
   documents    CampaignDocument[]
+  decks        Deck[]
 
   @@index([teamId])
 }
@@ -470,6 +485,7 @@ model Draft {
   posts           Post[]
   revisions       DraftRevision[]
   scheduledGenerations ScheduledGeneration[]
+  deckSlide       DeckSlide?
 
   @@index([briefId])
   @@index([teamId])
@@ -501,6 +517,57 @@ model Post {
   @@index([teamId])
 }
 
+// Brief-shaped input for the "New Slide Deck" flow: one submission that fans
+// out into N independent per-slide Briefs/Drafts (tracked via DeckSlide),
+// NOT a parent of a single Brief — see DeckSlide for how slides attach.
+model Deck {
+  id               String      @id @default(cuid())
+  teamId           String
+  userId           String
+  user             User        @relation(fields: [userId], references: [id])
+  campaignId       String?
+  campaign         Campaign?   @relation(fields: [campaignId], references: [id])
+  brandKitId       String?
+  brandKit         BrandKit?   @relation("DeckBrandKit", fields: [brandKitId], references: [id])
+  topic            String
+  description      String?
+  goal             String
+  tone             String
+  aspectRatio      AspectRatio @default(SQUARE)
+  designMode       DesignMode
+  copyProviderKey  String
+  imageProviderKey String?
+  briefImages      Json?
+  // [{ topic, hint }] — AI proposal, pre-approval; overwritten if re-proposed
+  proposedOutline  Json?
+  status           DeckStatus  @default(PROPOSING_OUTLINE)
+  failureReason    String?
+  createdAt        DateTime    @default(now())
+  slides           DeckSlide[]
+
+  @@index([userId])
+  @@index([campaignId])
+  @@index([teamId])
+}
+
+// One approved outline entry, owning a real Draft — slide generation,
+// rendering, revisions, and per-slide regenerate all reuse the existing
+// Draft machinery unchanged. draftId is the owning FK (Draft has no deckId
+// column); orderIndex fixes the slide's position within the deck's .pptx.
+model DeckSlide {
+  id         String   @id @default(cuid())
+  deckId     String
+  deck       Deck     @relation(fields: [deckId], references: [id])
+  draftId    String   @unique
+  draft      Draft    @relation(fields: [draftId], references: [id])
+  orderIndex Int
+  topic      String
+  createdAt  DateTime @default(now())
+
+  @@unique([deckId, orderIndex])
+  @@index([deckId])
+}
+
 model BrandKit {
   id        String              @id @default(cuid())
   teamId    String
@@ -519,6 +586,7 @@ model BrandKit {
   projects  Project[]           @relation("ProjectBrandKit")
   campaigns Campaign[]          @relation("CampaignBrandKit")
   briefs    Brief[]             @relation("BriefBrandKit")
+  decks     Deck[]              @relation("DeckBrandKit")
 
   @@index([isDefault, isDeleted])
   @@index([teamId])

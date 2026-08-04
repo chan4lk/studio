@@ -20,6 +20,10 @@ const CLIENTX_EMAIL = 'clientx.admin@users.bistec.internal'
 const CLIENTX_PASSWORD = 'BistecStudio2026!'
 
 const PPTX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+// Export URLs are presigned at read time (H10) — the query string (date/sig)
+// changes on every GET even for the same object, so "unchanged" must compare
+// the bare path (same convention as async-actions.test.ts).
+const urlPath = (u: unknown) => String(u ?? '').split('?')[0]
 
 async function createExportedDraft(api: ApiClient): Promise<string> {
   const kit = await (await api.post('/api/admin/brandkits', { name: 'PPTX Export Kit', colors: ['#0284c7'] })).json()
@@ -56,7 +60,7 @@ test.describe('PPTX export', () => {
     expect(body.subarray(0, 2).toString('ascii')).toBe('PK')
 
     const after = await (await api.get(`/api/drafts/${draftId}`)).json()
-    expect(after.exportUrl).toBe(before.exportUrl)
+    expect(urlPath(after.exportUrl)).toBe(urlPath(before.exportUrl))
   })
 
   // TC-PPTX-02 — render-if-missing path: draft has htmlContent but no
