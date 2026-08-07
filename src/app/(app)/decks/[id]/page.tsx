@@ -15,6 +15,7 @@ import type { AspectRatio, DeckStatus, DesignMode } from '@prisma/client'
 import { DeckReviewGrid } from '@/components/deck/DeckReviewGrid'
 import { DeckReviewExportBar } from '@/components/deck/DeckReviewExportBar'
 import type { DeckReviewSlide } from '@/components/deck/DeckReviewSlideCard'
+import { DECK_STATUS_TO_CHIP } from '@/components/deck/constants'
 
 interface DeckDetail {
   id: string
@@ -25,15 +26,6 @@ interface DeckDetail {
   status: DeckStatus
   failureReason: string | null
   slides: DeckReviewSlide[]
-}
-
-const DECK_STATUS_TO_CHIP: Record<DeckStatus, 'draft' | 'generating' | 'exported' | 'failed'> = {
-  DRAFTING: 'draft',
-  PROPOSING_OUTLINE: 'draft',
-  OUTLINE_READY: 'draft',
-  GENERATING: 'generating',
-  READY: 'exported',
-  FAILED: 'failed',
 }
 
 // A background "Regenerate design" run (T8's per-slide route) has no
