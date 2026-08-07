@@ -5,7 +5,7 @@
 // in sync with the routes it documents; when a route's `select`/`include`
 // changes, update the matching type here rather than re-declaring an
 // inline interface in a page.
-import type { AspectRatio, Channel, DesignMode, TeamRole } from '@prisma/client'
+import type { AspectRatio, Channel, DeckStatus, DesignMode, DraftStatus, TeamRole } from '@prisma/client'
 import type { Role } from '@/lib/auth'
 
 // ── Auth ─────────────────────────────────────────────────────────────────
@@ -266,7 +266,25 @@ export interface DraftDetail {
   }>
 }
 
-// ── Library (drafts + posts) ────────────────────────────────────────────
+// ── Decks ────────────────────────────────────────────────────────────────
+
+// One entry in GET /api/decks/[id]'s `slides` array — mirrors the
+// single-draft poll's per-draft fields (status/exportUrl/failureReason).
+// `hasPendingConflict` is derived server-side from Draft.pendingConflict and
+// NEVER surfaces the withheld HTML/explanation (see DraftDetail.conflict for
+// the single-draft equivalent, which does carry the explanation).
+export interface DeckDetailSlide {
+  id: string
+  draftId: string
+  orderIndex: number
+  topic: string
+  status: DraftStatus
+  exportUrl: string | null
+  failureReason: string | null
+  hasPendingConflict: boolean
+}
+
+// ── Library (drafts + posts + decks) ────────────────────────────────────
 
 // PostRecord as embedded in a library draft tile.
 export interface PostRecord {
@@ -279,7 +297,7 @@ export interface PostRecord {
   errorReason: string | null
 }
 
-// GET /api/library — one row of the `drafts` array.
+// GET /api/library — one standalone-post row of the `items` array.
 export interface DraftRecord {
   id: string
   exportUrl: string | null
@@ -294,8 +312,30 @@ export interface DraftRecord {
   posts: PostRecord[]
 }
 
+// GET /api/library — one deck row of the `items` array. `status` is the
+// Deck's own (largely dead — see design.md Key Decision 4) status column;
+// `readySlideCount`/`slideCount` are the real "is this deck done" signal.
+// `thumbnailUrl` is the signed exportUrl of the first (lowest orderIndex)
+// slide whose own Draft is EXPORTED/PUBLISHED, or null if none has rendered.
+export interface DeckLibraryItem {
+  id: string
+  topic: string
+  aspectRatio: AspectRatio
+  status: DeckStatus
+  failureReason: string | null
+  createdAt: string
+  slideCount: number
+  readySlideCount: number
+  thumbnailUrl: string | null
+}
+
+// GET /api/library — the merged, type-discriminated `items` array. A
+// DeckSlide's own Draft is excluded from the `post` half server-side, so a
+// deck's slides never also appear as separate `post` items.
+export type LibraryItem = ({ type: 'post' } & DraftRecord) | ({ type: 'deck' } & DeckLibraryItem)
+
 export interface LibraryResponse {
-  drafts: DraftRecord[]
+  items: LibraryItem[]
   total: number
   page: number
   pageSize: number
