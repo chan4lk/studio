@@ -46,7 +46,7 @@ interface DraftRow {
 // regardless of how many other rows exist.
 async function findDraftBySearch(api: ApiClient, topic: string): Promise<{ id: string } | undefined> {
   const body = await (await api.get(`/api/library?pageSize=50&search=${encodeURIComponent(topic)}`)).json()
-  return (body.drafts as DraftRow[]).find((d) => d.brief.topic === topic)
+  return (body.items as ({ type: string } & DraftRow)[]).find((d) => d.type === 'post' && d.brief.topic === topic)
 }
 
 async function findByTopic(api: ApiClient, topic: string): Promise<string> {
@@ -107,7 +107,7 @@ test.describe('Cross-tenant isolation (D7)', () => {
   // ── List routes: zero Bistec rows visible from ClientX ─────────────────────
   test('/api/library, /api/campaigns, /api/admin/brandkits, /api/brandkits as ClientX contain zero Bistec ids', async () => {
     const library = await (await clientxAdmin.get('/api/library?pageSize=50')).json()
-    const libraryIds = (library.drafts as { id: string }[]).map((d) => d.id)
+    const libraryIds = (library.items as { id: string }[]).map((d) => d.id)
     expect(libraryIds).not.toContain(bistecUncategorizedDraftId)
     expect(libraryIds).not.toContain(bistecCampaignDraftId)
 
