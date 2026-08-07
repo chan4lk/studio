@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { withTeamAuth } from "@/lib/api/handler"
-import { draftVisibilityWhere } from "@/lib/authz/visibility"
+import { draftVisibilityWhere, deckVisibilityWhere } from "@/lib/authz/visibility"
 import { resolveExportUrl } from "@/lib/storage/minio"
+import { mergeLibraryItems } from "@/lib/library/mergeLibraryItems"
 import { Prisma, PostStatus } from "@prisma/client"
+
+// Slide Drafts count as EXPORTED/ready the same way a standalone post does —
+// used to derive a deck's own readiness/thumbnail without touching
+// deck.status (design.md Key Decision 4 — deck.status never actually
+// reaches GENERATING/READY in the current implementation).
+const DECK_SLIDE_READY_STATUSES = new Set(["EXPORTED", "PUBLISHED"])
 
 export const GET = withTeamAuth(async (req: NextRequest, _ctx, user) => {
   const { searchParams } = new URL(req.url)
@@ -59,9 +66,30 @@ export const GET = withTeamAuth(async (req: NextRequest, _ctx, user) => {
   // (team-wide admins/super-admins see the whole team).
   andConditions.push(draftVisibilityWhere(user))
 
+  // A deck's slides are ordinary Draft rows under the hood — each already
+  // surfaces as its own Deck library item below, so exclude them here or
+  // they'd double-count as standalone posts too (deck-library-consolidation).
+  andConditions.push({ deckSlide: null })
+
   where.AND = andConditions
 
-  const [drafts, total] = await Promise.all([
+  // Decks ignore statusFilter (design.md Key Decision 2 — no per-post status
+  // has a clean 1:1 deck equivalent) but respect the same search semantics
+  // and the D6 visibility rule via deckVisibilityWhere.
+  const deckWhere: Prisma.DeckWhereInput = { ...deckVisibilityWhere(user) }
+  if (search) {
+    deckWhere.topic = { contains: search, mode: "insensitive" }
+  }
+
+  // Posts and decks are two independently createdAt-sorted result sets from
+  // different tables — an independent skip/take per source would skip or
+  // duplicate items whenever they interleave across a page boundary. Fetch
+  // up to page*pageSize rows from EACH source (sorted createdAt desc) and
+  // let mergeLibraryItems do the merge + true page slice (design.md Key
+  // Decision 1).
+  const fetchLimit = page * pageSize
+
+  const [drafts, filteredDraftCount, decks, filteredDeckCount] = await Promise.all([
     // select (not include): tiles never need htmlContent (megabytes/row after
     // inline-asset restoration) or pendingConflict. Campaign/kit labels come
     // from the brief's campaign — the only way drafts are linked to campaigns.
@@ -99,17 +127,71 @@ export const GET = withTeamAuth(async (req: NextRequest, _ctx, user) => {
         },
       },
       orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      take: fetchLimit,
     }),
     prisma.draft.count({ where }),
+    // Each slide's owning Draft status/exportUrl feeds slideCount/
+    // readySlideCount/thumbnailUrl below. Capped at MAX_DECK_SLIDES per
+    // deck, so this stays small even at the max fan-out.
+    prisma.deck.findMany({
+      where: deckWhere,
+      select: {
+        id: true,
+        topic: true,
+        aspectRatio: true,
+        status: true,
+        failureReason: true,
+        createdAt: true,
+        slides: {
+          orderBy: { orderIndex: "asc" },
+          select: {
+            draft: { select: { status: true, exportUrl: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: fetchLimit,
+    }),
+    prisma.deck.count({ where: deckWhere }),
   ])
 
   // exportUrl is stored as an EXPORTS object key — sign each for the browser
   // (thumbnails). Signing is local (no network round-trip), so mapping is cheap.
   const signedDrafts = await Promise.all(
-    drafts.map(async (d) => ({ ...d, exportUrl: await resolveExportUrl(d.exportUrl) }))
+    drafts.map(async (d) => ({
+      type: "post" as const,
+      ...d,
+      exportUrl: await resolveExportUrl(d.exportUrl),
+    }))
   )
 
-  return NextResponse.json({ drafts: signedDrafts, total, page, pageSize })
+  const signedDecks = await Promise.all(
+    decks.map(async (deck) => {
+      // slides are already ordered by orderIndex asc, so the first ready one
+      // here is the lowest-orderIndex ready slide.
+      const readySlides = deck.slides.filter((s) => DECK_SLIDE_READY_STATUSES.has(s.draft.status))
+      const thumbnailSlide = readySlides[0]
+      return {
+        type: "deck" as const,
+        id: deck.id,
+        topic: deck.topic,
+        aspectRatio: deck.aspectRatio,
+        status: deck.status,
+        failureReason: deck.failureReason,
+        createdAt: deck.createdAt,
+        slideCount: deck.slides.length,
+        readySlideCount: readySlides.length,
+        thumbnailUrl: thumbnailSlide ? await resolveExportUrl(thumbnailSlide.draft.exportUrl) : null,
+      }
+    })
+  )
+
+  const items = mergeLibraryItems(signedDrafts, signedDecks, page, pageSize)
+
+  return NextResponse.json({
+    items,
+    total: filteredDraftCount + filteredDeckCount,
+    page,
+    pageSize,
+  })
 })
