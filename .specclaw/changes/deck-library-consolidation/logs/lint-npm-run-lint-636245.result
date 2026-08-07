@@ -1,0 +1,7 @@
+exit=0
+duration_s=15
+log=.specclaw/changes/deck-library-consolidation/logs/lint-npm-run-lint-636245.log
+head=214abeb01f97e40e26fe7bd4ad9c230519f84453
+dirty=true
+cmd=npm run lint
+interrupted=false
