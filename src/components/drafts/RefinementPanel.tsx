@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { GlassPanel } from '@/components/ui/GlassPanel'
 import { apiFetch } from '@/lib/apiFetch'
 import type { DraftAction } from '@/lib/api-types'
+import { REFINE_SUGGESTIONS } from '@/lib/drafts/refineSuggestions'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -35,12 +36,6 @@ interface PendingResolution {
   baselineRevision: number | null
   conflictIdAtSend: string | null
 }
-
-const SUGGESTIONS = [
-  'Make the background darker',
-  'Move the headline to top',
-  'Increase font size',
-]
 
 export interface RefinementPanelProps {
   draftId: string
@@ -230,7 +225,7 @@ export function RefinementPanel({
       )}
 
       <div className="flex flex-wrap gap-1.5 mb-3">
-        {SUGGESTIONS.map((s) => (
+        {REFINE_SUGGESTIONS.map((s) => (
           <button
             key={s}
             onClick={() => setInput(s)}
