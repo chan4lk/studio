@@ -10,6 +10,8 @@ import {
   InvalidDeckOutlineError,
 } from '@/lib/deck/generateDeck'
 import { MAX_DECK_SLIDES } from '@/lib/deck/constants'
+import { TemplateNotFoundError } from '@/lib/agent/generateDraft'
+import { PathATemplateError } from '@/lib/agent/pathA'
 
 type Params = { id: string }
 
@@ -61,6 +63,15 @@ export const POST = withTeamAuth<Params>(async (req: NextRequest, { params }, us
       return NextResponse.json({ error: err.message }, { status: 409 })
     }
     if (err instanceof InvalidDeckOutlineError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
+    // Defensive backstop for a template deleted between deck creation (where
+    // POST /api/decks already validates eagerly) and approval — a race, not
+    // the primary UX path. Mirrors assemble-a/route.ts's mapping exactly.
+    if (err instanceof TemplateNotFoundError) {
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 })
+    }
+    if (err instanceof PathATemplateError) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
     throw err
