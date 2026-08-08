@@ -62,6 +62,11 @@ export default function NewDeckBriefPage() {
             brandKitId={wizard.brandKitId}
             setBrandKitId={wizard.setBrandKitId}
             brandKitOptions={wizard.brandKitOptions}
+            designMode={wizard.designMode}
+            setDesignMode={wizard.setDesignMode}
+            templateId={wizard.templateId}
+            setTemplateId={wizard.setTemplateId}
+            visibleTemplates={wizard.visibleTemplates}
           />
         )}
 
