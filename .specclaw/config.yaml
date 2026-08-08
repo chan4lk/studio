@@ -33,7 +33,7 @@ git:
 # trivially passing on empty commands. (E2E stays manual: it needs the test DB
 # + a test server on :3001 — see docs/e2e-test-plan.md §0.)
 build:
-  test_command: "npm run test:unit"
+  test_command: "env -u NODE_ENV npm run test:unit"
   lint_command: "npm run lint"
   build_command: "npm run build"
   parallel_tasks: 3               # Max concurrent agent spawns
