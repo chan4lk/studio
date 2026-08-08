@@ -11,6 +11,7 @@ import { GlassPanel } from '@/components/ui/GlassPanel'
 import { SegmentedToggle } from '@/components/ui/SegmentedToggle'
 import { QueryError } from '@/components/ui/QueryError'
 import { PostCard } from '@/components/library/PostCard'
+import { DeckCard } from '@/components/library/DeckCard'
 import { PublishDialog } from '@/components/library/PublishDialog'
 import { PublishHistoryDrawer } from '@/components/library/PublishHistoryDrawer'
 import { cn } from '@/lib/utils'
@@ -111,7 +112,7 @@ export default function LibraryPage() {
       allPages.length * PAGE_SIZE < lastPage.total ? allPages.length + 1 : undefined,
   })
 
-  const drafts = data?.pages.flatMap((p) => p.drafts) ?? []
+  const items = data?.pages.flatMap((p) => p.items) ?? []
 
   function invalidateLibrary() {
     return queryClient.invalidateQueries({ queryKey: ['library'] })
@@ -199,7 +200,7 @@ export default function LibraryPage() {
         </div>
       ) : isError ? (
         <QueryError error={error} onRetry={() => refetch()} />
-      ) : drafts.length === 0 ? (
+      ) : items.length === 0 ? (
         <GlassPanel className="p-12 text-center">
           <p className="text-sm text-light-text-muted dark:text-dark-text-muted">
             No posts found.
@@ -208,21 +209,25 @@ export default function LibraryPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {drafts.map((draft) => (
-              <PostCard
-                key={draft.id}
-                draft={toBriefCardProps(draft)}
-                isTeamAdmin={isTeamAdmin}
-                onPublish={(draftId, exportUrl) =>
-                  setShowPublishDialog({ draftId, exportUrl })
-                }
-                onViewHistory={(draftId, posts) =>
-                  setSelectedDraft({ id: draftId, posts: posts as PostRecord[] })
-                }
-                onDelete={handleDelete}
-                onClone={handleClone}
-              />
-            ))}
+            {items.map((item) =>
+              item.type === 'post' ? (
+                <PostCard
+                  key={item.id}
+                  draft={toBriefCardProps(item)}
+                  isTeamAdmin={isTeamAdmin}
+                  onPublish={(draftId, exportUrl) =>
+                    setShowPublishDialog({ draftId, exportUrl })
+                  }
+                  onViewHistory={(draftId, posts) =>
+                    setSelectedDraft({ id: draftId, posts: posts as PostRecord[] })
+                  }
+                  onDelete={handleDelete}
+                  onClone={handleClone}
+                />
+              ) : (
+                <DeckCard key={item.id} deck={item} />
+              )
+            )}
           </div>
 
           {/* Load more */}

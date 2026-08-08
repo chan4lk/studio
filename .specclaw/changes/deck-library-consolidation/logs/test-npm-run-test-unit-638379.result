@@ -1,0 +1,7 @@
+exit=1
+duration_s=3
+log=.specclaw/changes/deck-library-consolidation/logs/test-npm-run-test-unit-638379.log
+head=214abeb01f97e40e26fe7bd4ad9c230519f84453
+dirty=true
+cmd=npm run test:unit
+interrupted=false

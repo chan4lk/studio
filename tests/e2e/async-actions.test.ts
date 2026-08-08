@@ -382,7 +382,7 @@ test.describe('§Q — async draft actions', () => {
 
     // 3. Still in the library (it lists EXPORTED drafts — a flipped status hid it).
     const library = await (await api.get('/api/library?status=READY&pageSize=50')).json()
-    expect(library.drafts.some((d: { id: string }) => d.id === draft.id)).toBe(true)
+    expect(library.items.some((i: { type: string; id: string }) => i.type === 'post' && i.id === draft.id)).toBe(true)
 
     // 4. Regenerate copy is accepted (this was the 409 'not ready') and refills
     //    the emptied copy without a full regeneration.

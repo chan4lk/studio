@@ -1,0 +1,10 @@
+{
+  "change": "deck-library-consolidation",
+  "phase": "tasks",
+  "branch": "",
+  "phases": {
+    "spec": { "status": "done", "at": "2026-08-07T14:16:22Z" },
+    "design": { "status": "done", "at": "2026-08-07T14:16:23Z" },
+    "tasks": { "status": "done", "at": "2026-08-07T14:16:23Z" }
+  }
+}

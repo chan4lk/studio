@@ -5,15 +5,46 @@ import { loginAs, waitForDraft, type ApiClient } from '../helpers/api'
 //
 // Contract (src/app/api/library/route.ts):
 //   GET /api/library?page&pageSize&status&search
-//     → { drafts:[{id,status,exportUrl(signed),brief:{topic,channels},posts:[…],…}], total, page, pageSize }
-//   pageSize clamped to 1..50. status ∈ ALL|READY|PUBLISHED|SCHEDULED|FAILED.
-//   Admins see all drafts; editors see only their own.
+//     → { items:[{type:'post',id,status,exportUrl(signed),brief:{topic,channels},posts:[…],…}
+//              | {type:'deck',id,topic,status,slideCount,readySlideCount,thumbnailUrl(signed),…}], total, page, pageSize }
+//   pageSize clamped to 1..50. status ∈ ALL|READY|PUBLISHED|SCHEDULED|FAILED — decks IGNORE
+//   status (no per-post status has a clean 1:1 deck equivalent, design.md Key Decision 2) but
+//   respect search. Admins see all drafts/decks; editors see only their own (+ campaign-shared).
+//   A deck's own slide Drafts are excluded from the `post` half (deckSlide: null) so a deck
+//   never double-counts as N standalone posts (deck-library-consolidation).
 
 const MOCKED = () => !!(process.env.MOCK_AI && process.env.MOCK_PUPPETEER)
+const MOCKED_SOCIAL = () => !!(process.env.MOCK_AI && process.env.MOCK_PUPPETEER && process.env.MOCK_SOCIAL)
 const ADMIN_EMAIL = 'admin@bisteccare.lk'
 const ADMIN_PASSWORD = 'BistecStudio2026!'
 const EDITOR_EMAIL = 'editor@bisteccare.lk'
 const EDITOR_PASSWORD = 'BistecStudio2026!'
+const CLIENTX_EMAIL = 'clientx.admin@users.bistec.internal'
+const CLIENTX_PASSWORD = 'BistecStudio2026!'
+
+interface LibraryPostItem {
+  type: 'post'
+  id: string
+  status: string
+  exportUrl: string | null
+  brief: { topic: string }
+  posts: { status: string }[]
+}
+interface LibraryDeckItem {
+  type: 'deck'
+  id: string
+  topic: string
+  status: string
+  slideCount: number
+  readySlideCount: number
+  thumbnailUrl: string | null
+}
+type LibraryItem = LibraryPostItem | LibraryDeckItem
+
+async function libraryItems(api: ApiClient, query = 'pageSize=50'): Promise<LibraryItem[]> {
+  const body = await (await api.get(`/api/library?${query}`)).json()
+  return body.items as LibraryItem[]
+}
 
 // Mint an EXPORTED (READY) draft as the admin, returning the draftId.
 // UNCATEGORIZED (no campaignId) — team tenancy's D6 rule makes a
@@ -44,6 +75,53 @@ async function editorDraft(editor: ApiClient, topic: string): Promise<string> {
   return assembled.draftId
 }
 
+// Publishes a draft with a deterministic __FAIL_ALWAYS__ caption sentinel
+// (shouldMockPublishFail, src/lib/testHooks.ts) so the resulting Post lands
+// FAILED — needed to prove the FAILED status filter, since FAILED describes
+// a Post's publish outcome, not a Draft's generation outcome.
+async function publishFailingDraft(admin: ApiClient, topic: string): Promise<string> {
+  const draftId = await adminDraft(admin, `__FAIL_ALWAYS__ ${topic}`)
+  const res = await admin.post('/api/posts', { draftId, channel: 'INSTAGRAM' })
+  expect(res.status()).toBe(201)
+  const body = await res.json()
+  expect(body.status).toBe('FAILED')
+  return draftId
+}
+
+// Mints a deck with the given per-slide topics, approves them directly
+// (bypassing the proposed outline — approve does not require the body to
+// match a prior propose call), and polls until every slide has left
+// IN_PROGRESS. Mirrors deck-generation.test.ts's createDeck/waitForAllSlides
+// pair (kept local — each e2e spec file owns its own fixtures, no
+// cross-file test imports in this repo).
+async function createAndGenerateDeck(
+  api: ApiClient,
+  topic: string,
+  slideTopics: string[],
+): Promise<{ deckId: string; slides: { id: string; draftId: string; status: string }[] }> {
+  const res = await api.post('/api/decks', {
+    topic, goal: 'inform the team', tone: 'professional',
+    designMode: 'GENERATE', copyProviderKey: 'cli',
+  })
+  expect(res.status()).toBe(201)
+  const { deckId } = await res.json()
+
+  await api.post(`/api/decks/${deckId}/outline`, {})
+  const slides = slideTopics.map((t) => ({ topic: t, hint: `hint for ${t}` }))
+  const approveRes = await api.post(`/api/decks/${deckId}/outline/approve`, { slides })
+  expect(approveRes.status()).toBe(202)
+
+  const deadline = Date.now() + 30_000
+  let deck: { slides: { id: string; draftId: string; status: string }[] }
+  for (;;) {
+    deck = await (await api.get(`/api/decks/${deckId}`)).json()
+    if (deck.slides.length > 0 && deck.slides.every((s) => s.status !== 'IN_PROGRESS')) break
+    if (Date.now() > deadline) break
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  return { deckId, slides: deck!.slides }
+}
+
 test.describe('Library', () => {
   let api: ApiClient
   test.beforeEach(async ({ request }) => {
@@ -61,14 +139,14 @@ test.describe('Library', () => {
       const editorDraftId = await editorDraft(editor, `LibEditor-${Date.now()}`)
 
       // Editor library: contains the editor's draft, never the admin's.
-      const editorLib = await (await editor.get('/api/library?pageSize=50')).json()
-      const editorIds = editorLib.drafts.map((d: { id: string }) => d.id)
+      const editorItems = await libraryItems(editor)
+      const editorIds = editorItems.filter((i): i is LibraryPostItem => i.type === 'post').map((i) => i.id)
       expect(editorIds).toContain(editorDraftId)
       expect(editorIds).not.toContain(adminDraftId)
 
       // Admin library: sees the editor's draft too.
-      const adminLib = await (await api.get('/api/library?pageSize=50')).json()
-      const adminIds = adminLib.drafts.map((d: { id: string }) => d.id)
+      const adminItems = await libraryItems(api)
+      const adminIds = adminItems.filter((i): i is LibraryPostItem => i.type === 'post').map((i) => i.id)
       expect(adminIds).toContain(adminDraftId)
       expect(adminIds).toContain(editorDraftId)
     } finally {
@@ -81,17 +159,17 @@ test.describe('Library', () => {
     if (!MOCKED()) { test.skip(); return }
     const draftId = await adminDraft(api, `LibReady-${Date.now()}`)
 
-    const ready = await (await api.get('/api/library?status=READY&pageSize=50')).json()
-    const readyHit = ready.drafts.find((d: { id: string }) => d.id === draftId)
+    const ready = await libraryItems(api, 'status=READY&pageSize=50')
+    const readyHit = ready.find((i): i is LibraryPostItem => i.type === 'post' && i.id === draftId)
     expect(readyHit).toBeTruthy()
-    expect(readyHit.posts.length).toBe(0) // READY = EXPORTED with no posts
+    expect(readyHit!.posts.length).toBe(0) // READY = EXPORTED with no posts
 
-    const all = await (await api.get('/api/library?status=ALL&pageSize=50')).json()
-    expect(all.drafts.find((d: { id: string }) => d.id === draftId)).toBeTruthy()
+    const all = await libraryItems(api, 'status=ALL&pageSize=50')
+    expect(all.find((i) => i.type === 'post' && i.id === draftId)).toBeTruthy()
 
     // It has not been published, so it must NOT appear under PUBLISHED.
-    const published = await (await api.get('/api/library?status=PUBLISHED&pageSize=50')).json()
-    expect(published.drafts.find((d: { id: string }) => d.id === draftId)).toBeUndefined()
+    const published = await libraryItems(api, 'status=PUBLISHED&pageSize=50')
+    expect(published.find((i) => i.type === 'post' && i.id === draftId)).toBeUndefined()
   })
 
   // TC-LIB-03 — Search by topic substring.
@@ -100,10 +178,11 @@ test.describe('Library', () => {
     const marker = `Zylophone${Date.now()}`
     const draftId = await adminDraft(api, `Lib search ${marker} post`)
 
-    const hit = await (await api.get(`/api/library?search=${marker}&pageSize=50`)).json()
-    expect(hit.drafts.length).toBeGreaterThanOrEqual(1)
-    expect(hit.drafts.every((d: { brief: { topic: string } }) => d.brief.topic.includes(marker))).toBe(true)
-    expect(hit.drafts.find((d: { id: string }) => d.id === draftId)).toBeTruthy()
+    const hits = await libraryItems(api, `search=${marker}&pageSize=50`)
+    const postHits = hits.filter((i): i is LibraryPostItem => i.type === 'post')
+    expect(postHits.length).toBeGreaterThanOrEqual(1)
+    expect(postHits.every((i) => i.brief.topic.includes(marker))).toBe(true)
+    expect(postHits.find((i) => i.id === draftId)).toBeTruthy()
   })
 
   // TC-LIB-04 — Pagination envelope + pageSize honored.
@@ -117,8 +196,8 @@ test.describe('Library', () => {
     expect(body).toHaveProperty('total')
     expect(body.page).toBe(1)
     expect(body.pageSize).toBe(1)
-    expect(Array.isArray(body.drafts)).toBe(true)
-    expect(body.drafts.length).toBeLessThanOrEqual(1)
+    expect(Array.isArray(body.items)).toBe(true)
+    expect(body.items.length).toBeLessThanOrEqual(1)
   })
 
   // TC-LIB-05 — Thumbnails are signed (fetchable) URLs. Guards H10.
@@ -126,10 +205,107 @@ test.describe('Library', () => {
     if (!MOCKED()) { test.skip(); return }
     await adminDraft(api, `LibSigned-${Date.now()}`)
 
-    const body = await (await api.get('/api/library?pageSize=50')).json()
-    expect(body.drafts.length).toBeGreaterThanOrEqual(1)
-    for (const d of body.drafts) {
-      if (d.exportUrl) expect(d.exportUrl).toMatch(/^https?:\/\//)
+    const items = await libraryItems(api)
+    const posts = items.filter((i): i is LibraryPostItem => i.type === 'post')
+    expect(posts.length).toBeGreaterThanOrEqual(1)
+    for (const p of posts) {
+      if (p.exportUrl) expect(p.exportUrl).toMatch(/^https?:\/\//)
     }
+  })
+
+  // TC-LIB-06 — a deck's own slide Drafts never surface as standalone post
+  // tiles (they'd otherwise double-count: once as the deck, once per slide).
+  test('deck-slide Drafts are excluded from post tiles', async () => {
+    if (!MOCKED()) { test.skip(); return }
+    const marker = `LibSlideExcl-${Date.now()}`
+    const { deckId, slides } = await createAndGenerateDeck(api, `Lib deck excl ${marker}`, [`Only slide ${marker}`])
+    expect(slides).toHaveLength(1)
+
+    const items = await libraryItems(api)
+    const postIds = items.filter((i): i is LibraryPostItem => i.type === 'post').map((i) => i.id)
+    expect(postIds).not.toContain(slides[0].draftId)
+
+    // The deck itself still appears (as exactly one item).
+    const deckItems = items.filter((i) => i.type === 'deck' && i.id === deckId)
+    expect(deckItems).toHaveLength(1)
+  })
+
+  // TC-LIB-07 — a multi-slide deck appears as exactly one library item, with
+  // slideCount/readySlideCount reflecting every slide (not one row per slide).
+  test('a multi-slide deck appears as exactly one item', async () => {
+    if (!MOCKED()) { test.skip(); return }
+    const marker = `LibMulti-${Date.now()}`
+    const { deckId, slides } = await createAndGenerateDeck(api, `Lib multi ${marker}`, [
+      `Slide A ${marker}`,
+      `Slide B ${marker}`,
+      `Slide C ${marker}`,
+    ])
+    expect(slides).toHaveLength(3)
+    expect(slides.every((s) => s.status === 'EXPORTED')).toBe(true)
+
+    const items = await libraryItems(api)
+    const deckItems = items.filter((i): i is LibraryDeckItem => i.type === 'deck' && i.id === deckId)
+    expect(deckItems).toHaveLength(1)
+    expect(deckItems[0].slideCount).toBe(3)
+    expect(deckItems[0].readySlideCount).toBe(3)
+  })
+
+  // TC-LIB-08 — cross-team isolation: a deck from another team never appears
+  // in this team's library, same D6 shape as post drafts (TC-LIB-01).
+  test('a deck from another team never appears in this library', async ({ request }) => {
+    if (!MOCKED()) { test.skip(); return }
+    const marker = `LibCrossTeam-${Date.now()}`
+    const { deckId } = await createAndGenerateDeck(api, `Lib cross-team ${marker}`, [`Slide ${marker}`])
+
+    const clientx = await loginAs(request, CLIENTX_EMAIL, CLIENTX_PASSWORD, { team: 'ClientX' })
+    try {
+      const clientxItems = await libraryItems(clientx)
+      expect(clientxItems.some((i) => i.type === 'deck' && i.id === deckId)).toBe(false)
+
+      // Sanity: the owning (Bistec) team's own library still has it.
+      const ownItems = await libraryItems(api)
+      expect(ownItems.some((i) => i.type === 'deck' && i.id === deckId)).toBe(true)
+    } finally {
+      await clientx.dispose()
+    }
+  })
+
+  // TC-LIB-09 — search matches a deck's own topic, same substring semantics
+  // as the post-side search (TC-LIB-03).
+  test('search matches a deck by topic', async () => {
+    if (!MOCKED()) { test.skip(); return }
+    const marker = `Xenowave${Date.now()}`
+    const { deckId } = await createAndGenerateDeck(api, `Lib search ${marker} deck`, [`Slide ${marker}`])
+
+    const hits = await libraryItems(api, `search=${marker}&pageSize=50`)
+    const deckHits = hits.filter((i): i is LibraryDeckItem => i.type === 'deck')
+    expect(deckHits.length).toBeGreaterThanOrEqual(1)
+    expect(deckHits.every((i) => i.topic.includes(marker))).toBe(true)
+    expect(deckHits.find((i) => i.id === deckId)).toBeTruthy()
+  })
+
+  // TC-LIB-10 — decks ignore the status filter entirely (design.md Key
+  // Decision 2): the FAILED tab returns only Posts whose publish actually
+  // FAILED, but a deck (never FAILED-filtered) still shows up alongside them.
+  test('the FAILED status tab returns only FAILED posts, plus every deck regardless of status', async () => {
+    if (!MOCKED_SOCIAL()) { test.skip(); return }
+    const marker = `LibFailed-${Date.now()}`
+    const failedDraftId = await publishFailingDraft(api, marker)
+    const readyDraftId = await adminDraft(api, `LibFailedControl-${marker}`)
+    const { deckId } = await createAndGenerateDeck(api, `Lib failed-tab deck ${marker}`, [`Slide ${marker}`])
+
+    const items = await libraryItems(api, 'status=FAILED&pageSize=50')
+    const posts = items.filter((i): i is LibraryPostItem => i.type === 'post')
+    const decks = items.filter((i): i is LibraryDeckItem => i.type === 'deck')
+
+    expect(posts.find((p) => p.id === failedDraftId)).toBeTruthy()
+    expect(posts.find((p) => p.id === readyDraftId)).toBeUndefined()
+    expect(posts.every((p) => p.posts.some((post) => post.status === 'FAILED'))).toBe(true)
+
+    // The deck is not itself FAILED (Deck.status never reaches that value —
+    // design.md Key Decision 4) and shows up unconditionally.
+    const deckHit = decks.find((d) => d.id === deckId)
+    expect(deckHit).toBeTruthy()
+    expect(deckHit!.status).not.toBe('FAILED')
   })
 })

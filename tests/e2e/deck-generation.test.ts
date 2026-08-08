@@ -11,6 +11,14 @@ import { loginAs, type ApiClient } from '../helpers/api'
 //   GET  /api/decks/[id]                               -> deck + slides (each slide surfaces its Draft's status/exportUrl/failureReason)
 //   POST /api/decks/[id]/slides/[slideId]/regenerate-design -> 202/409, same claim semantics as the single-draft route
 //   POST /api/decks/[id]/export/pptx                  -> 200 binary (all slides EXPORTED) | 422 (any slide not EXPORTED)
+//   POST /api/drafts/[draftId]/refine {instruction}    -> 202; per-slide prompted regenerate — no deck-scoped refine
+//                                                          route exists (deck-library-consolidation design.md Key
+//                                                          Decision 5), the deck page calls the existing single-draft
+//                                                          route directly with that slide's draftId and detects
+//                                                          completion via GET /api/decks/[id]'s exportUrl diff, same
+//                                                          as regenerate-design; a brand-kit conflict instead sets
+//                                                          slides[].hasPendingConflict (T3/FR-11) without touching
+//                                                          exportUrl.
 // Visibility: withTeamAuth + canAccessContent, same D6 shape as Brief/Draft
 // (own + campaign-shared; team admin sees all; cross-team always 404).
 // Requires MOCK_AI + MOCK_PUPPETEER to mint decks deterministically.
@@ -37,6 +45,7 @@ interface DeckSlideRow {
   status: string
   exportUrl: string | null
   failureReason: string | null
+  hasPendingConflict: boolean
 }
 interface DeckRow {
   id: string
@@ -83,6 +92,27 @@ async function waitForSlideExportChange(
     const deck = (await (await api.get(`/api/decks/${deckId}`)).json()) as DeckRow
     const slide = deck.slides.find((s) => s.id === slideId)!
     if (slide.exportUrl && urlPath(slide.exportUrl) !== urlPath(previousExportUrl)) return slide
+    if (Date.now() > deadline) return slide
+    await sleep(intervalMs)
+  }
+}
+
+// A brand-kit conflict never advances exportUrl or leaves IN_PROGRESS on its
+// own — it settles the same instant hasPendingConflict flips true (mirrors
+// waitForSlideExportChange's shape, but the settle signal is the conflict
+// flag rather than a changed export path; see deck-library-consolidation
+// design.md's FR-11 / T3).
+async function waitForSlideConflict(
+  api: ApiClient,
+  deckId: string,
+  slideId: string,
+  { timeoutMs = 30_000, intervalMs = 250 }: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<DeckSlideRow> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const deck = (await (await api.get(`/api/decks/${deckId}`)).json()) as DeckRow
+    const slide = deck.slides.find((s) => s.id === slideId)!
+    if (slide.hasPendingConflict) return slide
     if (Date.now() > deadline) return slide
     await sleep(intervalMs)
   }
@@ -293,5 +323,89 @@ test.describe('§U — slide deck generation', () => {
     } finally {
       await editor.dispose()
     }
+  })
+
+  // TC-DECK-05 — per-slide prompted refine (deck-library-consolidation): a
+  // free-text instruction posted straight to the existing single-draft
+  // POST /api/drafts/[id]/refine route re-renders ONLY that slide's Draft.
+  // The deck poll never grows a deck-scoped refine endpoint (design.md Key
+  // Decision 5) — the deck review page just diffs exportUrl the same way
+  // handleRegenerateDesign already does, so this proves the sibling slide
+  // (a completely separate Draft/Brief row) is untouched by the call.
+  test('a per-slide refine instruction updates that slide only; the other slide is untouched', async () => {
+    if (!MOCKED()) {
+      test.skip()
+      return
+    }
+    const label = `Refine ${Date.now()}`
+    const { campaignId } = await createDeckFixtures(api, label)
+    const deckId = await createDeck(api, { topic: `Deck E2E Refine ${label}`, campaignId })
+
+    await api.post(`/api/decks/${deckId}/outline`, {})
+    const proposed = (await (await api.get(`/api/decks/${deckId}`)).json()) as DeckRow
+    const twoSlides = [
+      { topic: proposed.proposedOutline!.slides[0].topic, hint: 'first slide' },
+      { topic: 'Second slide', hint: 'second slide' },
+    ]
+    await api.post(`/api/decks/${deckId}/outline/approve`, { slides: twoSlides })
+
+    const generated = await waitForAllSlides(api, deckId)
+    expect(generated.slides.map((s) => s.status)).toEqual(['EXPORTED', 'EXPORTED'])
+
+    const targetSlide = generated.slides[0]
+    const untouchedSlideExportBefore = generated.slides[1].exportUrl
+
+    const refineRes = await api.post(`/api/drafts/${targetSlide.draftId}/refine`, {
+      instruction: 'Make the background darker',
+    })
+    expect(refineRes.status()).toBe(202)
+    expect(await refineRes.json()).toEqual({ ok: true })
+
+    const refined = await waitForSlideExportChange(api, deckId, targetSlide.id, targetSlide.exportUrl)
+    expect(refined.status).toBe('EXPORTED')
+    expect(refined.hasPendingConflict).toBe(false)
+    expect(urlPath(refined.exportUrl)).not.toBe(urlPath(targetSlide.exportUrl))
+
+    const afterRefine = (await (await api.get(`/api/decks/${deckId}`)).json()) as DeckRow
+    const otherSlide = afterRefine.slides.find((s) => s.id !== targetSlide.id)!
+    expect(urlPath(otherSlide.exportUrl)).toBe(urlPath(untouchedSlideExportBefore))
+    expect(otherSlide.hasPendingConflict).toBe(false)
+  })
+
+  // TC-DECK-06 — a refine that resolves into a brand-kit conflict sets
+  // hasPendingConflict on that slide (FR-11 / T3), and does so WITHOUT
+  // advancing exportUrl or waiting out the deck page's regenerate timeout —
+  // the conflict is a clean completion (src/app/api/drafts/[id]/refine/route.ts),
+  // so this end of the poll settles the instant hasPendingConflict flips.
+  test('a refine that produces a brand-kit conflict sets hasPendingConflict on that slide', async () => {
+    if (!MOCKED()) {
+      test.skip()
+      return
+    }
+    const label = `RefineConflict ${Date.now()}`
+    const { campaignId } = await createDeckFixtures(api, label)
+    const deckId = await createDeck(api, { topic: `Deck E2E Conflict ${label}`, campaignId })
+
+    await api.post(`/api/decks/${deckId}/outline`, {})
+    const proposed = (await (await api.get(`/api/decks/${deckId}`)).json()) as DeckRow
+    await api.post(`/api/decks/${deckId}/outline/approve`, { slides: proposed.proposedOutline!.slides })
+
+    const generated = await waitForAllSlides(api, deckId)
+    const targetSlide = generated.slides[0]
+    expect(targetSlide.status).toBe('EXPORTED')
+    expect(targetSlide.hasPendingConflict).toBe(false)
+
+    const refineRes = await api.post(`/api/drafts/${targetSlide.draftId}/refine`, {
+      instruction: 'conflict_test: use completely off-brand colors',
+    })
+    expect(refineRes.status()).toBe(202)
+    expect(await refineRes.json()).toEqual({ ok: true })
+
+    const conflicted = await waitForSlideConflict(api, deckId, targetSlide.id)
+    expect(conflicted.hasPendingConflict).toBe(true)
+    // A conflict withholds the change: exportUrl is untouched (design.md —
+    // "the conflict is a clean completion... nothing applied yet").
+    expect(urlPath(conflicted.exportUrl)).toBe(urlPath(targetSlide.exportUrl))
+    expect(conflicted.status).toBe('EXPORTED')
   })
 })

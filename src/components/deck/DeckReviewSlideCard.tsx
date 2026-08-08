@@ -1,13 +1,14 @@
 'use client'
 
 import React, { useState } from 'react'
-import { AlertTriangle, ImageIcon, Loader2, Maximize2, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
+import { AlertTriangle, ImageIcon, Loader2, Maximize2, RotateCcw, Send, Sparkles, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { GlassPanel } from '@/components/ui/GlassPanel'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { ImageLightbox } from '@/components/ui/ImageLightbox'
 import type { AspectRatio, DraftStatus } from '@prisma/client'
 import { aspectClassFor } from '@/lib/aspectRatio'
+import { REFINE_SUGGESTIONS } from '@/lib/drafts/refineSuggestions'
 
 export interface DeckReviewSlide {
   id: string
@@ -35,9 +36,19 @@ interface DeckReviewSlideCardProps {
   regenerating: boolean
   retrying: boolean
   deleting: boolean
+  // T9 — free-text refine (POST /api/drafts/{draftId}/refine), tracked by the
+  // parent the same way it tracks regenerate (exportUrl-diff + timeout, since
+  // the deck poll has no pendingAction field).
+  refining: boolean
+  // Derived from Draft.pendingConflict by GET /api/decks/[id] — when true, a
+  // fired refine settled into a brand-kit conflict that must be resolved on
+  // the slide's own draft page, so we stop showing a spinner immediately
+  // rather than waiting out the regenerate-style timeout.
+  hasPendingConflict: boolean
   onRegenerateDesign: () => void
   onRetry: () => void
   onDelete: () => void
+  onRefine: (instruction: string) => void
 }
 
 export function DeckReviewSlideCard({
@@ -47,15 +58,27 @@ export function DeckReviewSlideCard({
   regenerating,
   retrying,
   deleting,
+  refining,
+  hasPendingConflict,
   onRegenerateDesign,
   onRetry,
   onDelete,
+  onRefine,
 }: DeckReviewSlideCardProps) {
   const [showPreview, setShowPreview] = useState(false)
+  const [refineInput, setRefineInput] = useState('')
   const isGenerating = slide.status === 'IN_PROGRESS'
   const isFailed = slide.status === 'FAILED'
   const isReady = slide.status === 'EXPORTED' || slide.status === 'PUBLISHED'
-  const busy = regenerating || retrying || deleting || isGenerating
+  const busy = regenerating || retrying || deleting || refining || isGenerating
+  const canRefine = canRegenerateDesign && isReady
+
+  function submitRefine(instruction: string) {
+    const trimmed = instruction.trim()
+    if (!trimmed || busy) return
+    onRefine(trimmed)
+    setRefineInput('')
+  }
 
   return (
     <GlassPanel className="flex flex-col overflow-hidden">
@@ -79,15 +102,15 @@ export function DeckReviewSlideCard({
           </div>
         )}
 
-        {(isGenerating || regenerating) && (
+        {(isGenerating || regenerating || (refining && !hasPendingConflict)) && (
           <div
             className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/45 backdrop-blur-sm"
-            aria-label={regenerating ? 'Regenerating design' : 'Generating slide'}
+            aria-label={regenerating ? 'Regenerating design' : refining ? 'Refining design' : 'Generating slide'}
             role="status"
           >
             <Loader2 size={22} className="animate-spin text-white/90" />
             <span className="text-xs font-medium text-white/90">
-              {regenerating ? 'Regenerating…' : 'Generating…'}
+              {regenerating ? 'Regenerating…' : refining ? 'Refining…' : 'Generating…'}
             </span>
           </div>
         )}
@@ -145,6 +168,58 @@ export function DeckReviewSlideCard({
             {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
           </Button>
         </div>
+
+        {canRefine && (
+          <div className="flex flex-col gap-2 pt-2 mt-1 border-t border-light-border/50 dark:border-dark-border/50">
+            {hasPendingConflict ? (
+              <p className="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+                <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+                <span>
+                  This edit needs your review —{' '}
+                  <a href={`/drafts/${slide.draftId}`} className="underline hover:no-underline">
+                    open this slide
+                  </a>{' '}
+                  to resolve it.
+                </span>
+              </p>
+            ) : (
+              <>
+                <div className="flex flex-wrap gap-1.5">
+                  {REFINE_SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setRefineInput(s)}
+                      disabled={busy}
+                      className="text-[11px] px-2 py-0.5 rounded-lg bg-primary/5 dark:bg-primary-light/5 text-primary dark:text-primary-light hover:bg-primary/10 dark:hover:bg-primary-light/10 transition-colors disabled:opacity-50"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <form
+                  className="flex gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    submitRefine(refineInput)
+                  }}
+                >
+                  <input
+                    value={refineInput}
+                    onChange={(e) => setRefineInput(e.target.value)}
+                    disabled={busy}
+                    placeholder="Refine this slide…"
+                    aria-label={`Refine slide ${slide.orderIndex + 1}`}
+                    className="glass-input rounded-xl px-2.5 py-1.5 text-xs flex-1 text-light-text dark:text-dark-text"
+                  />
+                  <Button type="submit" size="sm" disabled={busy || !refineInput.trim()}>
+                    {refining ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                  </Button>
+                </form>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {slide.exportUrl && (

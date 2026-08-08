@@ -19,7 +19,7 @@ async function loadDeck(id: string) {
         orderBy: { orderIndex: 'asc' },
         include: {
           draft: {
-            select: { status: true, exportUrl: true, failureReason: true },
+            select: { status: true, exportUrl: true, failureReason: true, pendingConflict: true },
           },
         },
       },
@@ -36,6 +36,9 @@ async function loadDeck(id: string) {
       status: slide.draft.status,
       exportUrl: await resolveExportUrl(slide.draft.exportUrl),
       failureReason: slide.draft.failureReason,
+      // Never surface the raw pendingConflict — it can hold the withheld HTML
+      // (server-side only; see the single-draft GET's identical guard).
+      hasPendingConflict: slide.draft.pendingConflict !== null,
     })),
   )
 

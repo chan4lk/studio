@@ -12,9 +12,9 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { apiFetch } from '@/lib/apiFetch'
 import { downloadBlobFrom } from '@/lib/download'
 import type { AspectRatio, DeckStatus, DesignMode } from '@prisma/client'
-import { DeckReviewGrid } from '@/components/deck/DeckReviewGrid'
+import { DeckReviewGrid, type DeckReviewGridSlide } from '@/components/deck/DeckReviewGrid'
 import { DeckReviewExportBar } from '@/components/deck/DeckReviewExportBar'
-import type { DeckReviewSlide } from '@/components/deck/DeckReviewSlideCard'
+import { DECK_STATUS_TO_CHIP } from '@/components/deck/constants'
 
 interface DeckDetail {
   id: string
@@ -24,16 +24,7 @@ interface DeckDetail {
   designMode: DesignMode
   status: DeckStatus
   failureReason: string | null
-  slides: DeckReviewSlide[]
-}
-
-const DECK_STATUS_TO_CHIP: Record<DeckStatus, 'draft' | 'generating' | 'exported' | 'failed'> = {
-  DRAFTING: 'draft',
-  PROPOSING_OUTLINE: 'draft',
-  OUTLINE_READY: 'draft',
-  GENERATING: 'generating',
-  READY: 'exported',
-  FAILED: 'failed',
+  slides: DeckReviewGridSlide[]
 }
 
 // A background "Regenerate design" run (T8's per-slide route) has no
@@ -60,9 +51,12 @@ export default function DeckReviewPage() {
   const [regeneratingSlideIds, setRegeneratingSlideIds] = useState<Set<string>>(new Set())
   const [retryingSlideIds, setRetryingSlideIds] = useState<Set<string>>(new Set())
   const [deletingSlideIds, setDeletingSlideIds] = useState<Set<string>>(new Set())
+  const [refiningSlideIds, setRefiningSlideIds] = useState<Set<string>>(new Set())
 
   const regenBaselineRef = useRef<Map<string, string | null>>(new Map())
   const regenStartedAtRef = useRef<Map<string, number>>(new Map())
+  const refineBaselineRef = useRef<Map<string, string | null>>(new Map())
+  const refineStartedAtRef = useRef<Map<string, number>>(new Map())
 
   const fetchDeck = useCallback(async () => {
     try {
@@ -89,6 +83,33 @@ export default function DeckReviewPage() {
         }
         return next
       })
+
+      // Resolve any refine runs the same way — plus an early-exit the
+      // regenerate case doesn't need: a refine that settled into a brand-kit
+      // conflict never gets a new exportUrl (the HTML is withheld pending
+      // review on the slide's own draft page), so waiting out the timeout
+      // would leave the spinner showing long after there's nothing running.
+      setRefiningSlideIds((prev) => {
+        if (prev.size === 0) return prev
+        const next = new Set(prev)
+        const now = Date.now()
+        for (const slideId of prev) {
+          const slide = data.slides.find((s) => s.id === slideId)
+          const baseline = refineBaselineRef.current.get(slideId)
+          const startedAt = refineStartedAtRef.current.get(slideId) ?? 0
+          const settled =
+            !slide ||
+            slide.exportUrl !== baseline ||
+            slide.hasPendingConflict ||
+            now - startedAt > REGENERATE_TIMEOUT_MS
+          if (settled) {
+            next.delete(slideId)
+            refineBaselineRef.current.delete(slideId)
+            refineStartedAtRef.current.delete(slideId)
+          }
+        }
+        return next
+      })
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
@@ -103,7 +124,8 @@ export default function DeckReviewPage() {
   const needsPolling =
     deck?.status === 'GENERATING' ||
     deck?.slides.some((s) => s.status === 'IN_PROGRESS') ||
-    regeneratingSlideIds.size > 0
+    regeneratingSlideIds.size > 0 ||
+    refiningSlideIds.size > 0
 
   useEffect(() => {
     if (!needsPolling) return
@@ -129,6 +151,36 @@ export default function DeckReviewPage() {
       })
       regenBaselineRef.current.delete(slideId)
       regenStartedAtRef.current.delete(slideId)
+    }
+  }
+
+  // Free-text refine (T9's per-slide route reuses the existing single-draft
+  // POST /api/drafts/[id]/refine unmodified — same async 202 + poll-driven
+  // contract as regenerate-design). Tracked the same way: capture the
+  // baseline exportUrl before firing, since the deck poll has no
+  // pendingAction field to watch.
+  async function handleRefine(slideId: string, instruction: string) {
+    const slide = deck?.slides.find((s) => s.id === slideId)
+    if (!slide) return
+    refineBaselineRef.current.set(slideId, slide.exportUrl)
+    refineStartedAtRef.current.set(slideId, Date.now())
+    setRefiningSlideIds((prev) => new Set(prev).add(slideId))
+    try {
+      await apiFetch(`/api/drafts/${slide.draftId}/refine`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instruction }),
+      })
+      await fetchDeck()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to refine this slide')
+      setRefiningSlideIds((prev) => {
+        const next = new Set(prev)
+        next.delete(slideId)
+        return next
+      })
+      refineBaselineRef.current.delete(slideId)
+      refineStartedAtRef.current.delete(slideId)
     }
   }
 
@@ -248,9 +300,11 @@ export default function DeckReviewPage() {
           regeneratingSlideIds={regeneratingSlideIds}
           retryingSlideIds={retryingSlideIds}
           deletingSlideIds={deletingSlideIds}
+          refiningSlideIds={refiningSlideIds}
           onRegenerateDesign={handleRegenerateDesign}
           onRetry={handleRetry}
           onDelete={handleDelete}
+          onRefine={handleRefine}
         />
       )}
     </>
