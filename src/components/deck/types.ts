@@ -37,6 +37,7 @@ export interface DeckDetail {
   tone: string
   aspectRatio: 'SQUARE' | 'PORTRAIT' | 'STORY'
   designMode: 'TEMPLATE' | 'GENERATE'
+  templateId: string | null
   campaignId: string | null
   brandKitId: string | null
   status: 'DRAFTING' | 'PROPOSING_OUTLINE' | 'OUTLINE_READY' | 'GENERATING' | 'READY' | 'FAILED'

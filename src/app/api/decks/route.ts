@@ -26,6 +26,7 @@ export const POST = withTeamAuth(async (req: NextRequest, _ctx, user) => {
     tone?: string
     aspectRatio?: AspectRatio
     designMode?: string
+    templateId?: string
     campaignId?: string
     brandKitId?: string
     copyProviderKey?: string
@@ -40,6 +41,7 @@ export const POST = withTeamAuth(async (req: NextRequest, _ctx, user) => {
     tone,
     aspectRatio,
     designMode,
+    templateId,
     campaignId,
     brandKitId,
     copyProviderKey,
@@ -63,6 +65,10 @@ export const POST = withTeamAuth(async (req: NextRequest, _ctx, user) => {
   // aspectRatio is optional; defaults to SQUARE, same as Brief.
   if (aspectRatio != null && !isAspectRatio(aspectRatio)) {
     return NextResponse.json({ error: 'aspectRatio must be SQUARE, PORTRAIT, or STORY' }, { status: 400 })
+  }
+  const resolvedAspectRatio = aspectRatio ?? 'SQUARE'
+  if (designMode === 'TEMPLATE' && !templateId?.trim()) {
+    return NextResponse.json({ error: 'templateId is required when designMode is TEMPLATE' }, { status: 400 })
   }
   // CLI mode defaults copy to the local Claude CLI (OAuth chain) — no provider
   // key required; an explicit key overrides and is existence-checked below.
@@ -91,7 +97,7 @@ export const POST = withTeamAuth(async (req: NextRequest, _ctx, user) => {
 
   // Verify referenced records in parallel (independent lookups), team-scoped —
   // see the matching note in briefs/route.ts (resolveCopyProvider fix).
-  const [copyProvider, imageProvider, campaign, brandKit] = await Promise.all([
+  const [copyProvider, imageProvider, campaign, brandKit, template] = await Promise.all([
     mustValidateCopyKey
       ? prisma.availableProvider.findFirst({
           where: { providerKey: resolvedCopyKey, slot: 'COPY', teamId: user.teamId, isEnabled: true },
@@ -107,6 +113,11 @@ export const POST = withTeamAuth(async (req: NextRequest, _ctx, user) => {
       : Promise.resolve(null),
     brandKitId
       ? prisma.brandKit.findFirst({ where: { id: brandKitId, isDeleted: false } })
+      : Promise.resolve(null),
+    designMode === 'TEMPLATE' && templateId
+      ? prisma.brandKitTemplate.findFirst({
+          where: { id: templateId, brandKit: { teamId: user.teamId, isDeleted: false } },
+        })
       : Promise.resolve(null),
   ])
 
@@ -125,6 +136,30 @@ export const POST = withTeamAuth(async (req: NextRequest, _ctx, user) => {
   if (brandKitId && (!brandKit || brandKit.teamId !== user.teamId)) {
     return NextResponse.json({ error: 'Brand kit not found' }, { status: 404 })
   }
+  // Eager validation at creation time — a Deck's templateId is read back an
+  // arbitrary time later (after outline review), unlike a Brief's, which is
+  // re-supplied by the client milliseconds later at assemble-a. Re-states
+  // assertTemplateMatchesBrief's two checks (kit + aspect ratio match) rather
+  // than reshaping that Brief-typed helper's signature (design.md Key
+  // Decisions); the authoritative check still runs, unmodified, inside
+  // createPendingDraft at approval time.
+  if (designMode === 'TEMPLATE') {
+    if (!template) {
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 })
+    }
+    if (brandKitId && template.brandKitId !== brandKitId) {
+      return NextResponse.json(
+        { error: "Template does not belong to the deck's selected brand kit" },
+        { status: 400 },
+      )
+    }
+    if (template.aspectRatio !== resolvedAspectRatio) {
+      return NextResponse.json(
+        { error: "Template aspect ratio does not match the deck's selected size" },
+        { status: 400 },
+      )
+    }
+  }
 
   const deck = await prisma.deck.create({
     data: {
@@ -136,6 +171,9 @@ export const POST = withTeamAuth(async (req: NextRequest, _ctx, user) => {
       tone: tone.trim(),
       aspectRatio: aspectRatio ?? 'SQUARE',
       designMode: designMode as DesignMode,
+      // Only Path A decks persist a template — Path B ignores any submitted
+      // templateId (mirrors the wizard clearing it on switching to GENERATE).
+      templateId: designMode === 'TEMPLATE' ? templateId!.trim() : null,
       campaignId: campaignId ?? null,
       brandKitId: brandKitId ?? null,
       copyProviderKey: resolvedCopyKey,

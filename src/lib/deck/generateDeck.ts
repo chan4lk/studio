@@ -82,7 +82,7 @@ async function createOneSlide(deck: Deck, entry: DeckOutlineSlide, orderIndex: n
 
   let draft: Draft
   try {
-    draft = await createPendingDraft(brief)
+    draft = await createPendingDraft(brief, { templateId: deck.templateId })
   } catch (err) {
     await prisma.brief.delete({ where: { id: brief.id } }).catch(() => {})
     throw err

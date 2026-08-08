@@ -51,6 +51,7 @@ async function loadDeck(id: string) {
       tone: deck.tone,
       aspectRatio: deck.aspectRatio,
       designMode: deck.designMode,
+      templateId: deck.templateId,
       campaignId: deck.campaignId,
       brandKitId: deck.brandKitId,
       status: deck.status,
