@@ -535,6 +535,12 @@ model Deck {
   tone             String
   aspectRatio      AspectRatio @default(SQUARE)
   designMode       DesignMode
+  // Path A template applied to every slide (null = Path B, GENERATE). SetNull
+  // so deleting a template never blocks deleting a Deck; a deck whose template
+  // vanishes falls into the existing TemplateNotFoundError 404 path at the
+  // next outline-approve attempt, same as a single-post retry today.
+  templateId       String?
+  template         BrandKitTemplate? @relation("DeckTemplate", fields: [templateId], references: [id], onDelete: SetNull)
   copyProviderKey  String
   imageProviderKey String?
   briefImages      Json?
@@ -623,6 +629,7 @@ model BrandKitTemplate {
   createdAt          DateTime @default(now())
   referencedByBriefs Brief[]  @relation("BriefReferenceTemplate")
   scheduledGenerations ScheduledGeneration[] @relation("ScheduledGenerationTemplate")
+  decks              Deck[]   @relation("DeckTemplate")
 
   @@index([brandKitId])
 }
