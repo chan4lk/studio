@@ -12,13 +12,21 @@
 | Spec     | 🟢 Complete        |                                                                                                                                                                                              |
 | Design   | 🟢 Complete        |                                                                                                                                                                                              |
 | Tasks    | 🟢 Complete        | 8 tasks, 3 waves                                                                                                                                                                             |
-| Build    | ⚪ Pending         |                                                                                                                                                                                              |
-| Verify   | ⚪ Pending         |                                                                                                                                                                                              |
+| Build    | 🟢 Complete        | T1–T8 done                                                                                                                                                                                   |
+| Verify   | ⚪ Pending         | Ready for `/specclaw:verify`                                                                                                                                                                 |
 
 ## Task Progress
 
-**Completed:** 0 / 8
+**Completed:** 8 / 8
 **Failed:** 0
+
+## Gates (T8, run 2026-08-08)
+
+- tsc --noEmit: clean
+- lint: 0 errors, 10 warnings (pre-existing baseline)
+- unit: 400/400 passed
+- full mock E2E catalog: 162 passed / 9 failed / 4 skipped / 18 did-not-run. All 9 failures are the pre-existing browser-login/HMR `page.waitForURL` timeout flake (`ui.test.ts`, `campaign-scheduling.test.ts`, `settings-claude-token.test.ts`, documented in `CLAUDE.md`); the 18 did-not-run are `team-isolation.test.ts` cases cascaded-skipped after its beforeAll hit a fixture-setup failure from that same root-cause login timeout. `deck-generation.test.ts` (§U): **6/6 passed**, including both new Path A cases.
+- production build: green
 
 ## Agent Runs
 

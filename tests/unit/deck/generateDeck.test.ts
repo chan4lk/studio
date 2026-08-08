@@ -54,6 +54,7 @@ const baseDeck: Deck = {
   tone: 'professional',
   aspectRatio: 'SQUARE',
   designMode: 'GENERATE',
+  templateId: null,
   copyProviderKey: 'cli',
   imageProviderKey: null,
   briefImages: null,
@@ -143,8 +144,8 @@ describe('approveDeckOutline — happy path', () => {
     })
 
     expect(h.createPendingDraft).toHaveBeenCalledTimes(2)
-    expect(h.createPendingDraft).toHaveBeenNthCalledWith(1, { id: 'brief-1' })
-    expect(h.createPendingDraft).toHaveBeenNthCalledWith(2, { id: 'brief-2' })
+    expect(h.createPendingDraft).toHaveBeenNthCalledWith(1, { id: 'brief-1' }, { templateId: null })
+    expect(h.createPendingDraft).toHaveBeenNthCalledWith(2, { id: 'brief-2' }, { templateId: null })
 
     expect(h.deckSlideCreate).toHaveBeenNthCalledWith(1, {
       data: { deckId: 'deck-1', draftId: 'draft-1', orderIndex: 0, topic: outline[0].topic },
@@ -174,6 +175,13 @@ describe('approveDeckOutline — happy path', () => {
     expect(h.startBackgroundGeneration).toHaveBeenCalledTimes(2)
     expect(errorSpy).toHaveBeenCalledTimes(1)
     errorSpy.mockRestore()
+  })
+
+  it('passes the deck templateId to createPendingDraft for every slide (Path A)', async () => {
+    h.deckFindUnique.mockResolvedValue({ ...baseDeck, designMode: 'TEMPLATE', templateId: 'tmpl-1' })
+    await approveDeckOutline('deck-1', outline, actor)
+    expect(h.createPendingDraft).toHaveBeenNthCalledWith(1, { id: 'brief-1' }, { templateId: 'tmpl-1' })
+    expect(h.createPendingDraft).toHaveBeenNthCalledWith(2, { id: 'brief-2' }, { templateId: 'tmpl-1' })
   })
 
   it('serializes a null briefImages as Prisma.JsonNull, and passes through a real value untouched', async () => {

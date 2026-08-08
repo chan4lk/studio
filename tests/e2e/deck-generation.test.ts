@@ -294,4 +294,114 @@ test.describe('§U — slide deck generation', () => {
       await editor.dispose()
     }
   })
+
+  // TC-DECK-05 — Path A: a deck with a templateId generates every slide
+  // through the existing, unmodified template-fill pipeline (deck-path-a-
+  // template-support spec.md AC-4/AC-8), and GET reflects it.
+  test('a Path A deck (templateId) generates every slide via the template-fill pipeline', async () => {
+    if (!MOCKED()) {
+      test.skip()
+      return
+    }
+    const label = `PathA ${Date.now()}`
+    const kit = await (await api.post('/api/admin/brandkits', { name: `Deck Kit ${label}`, colors: ['#0284c7'] })).json()
+    const template = await (
+      await api.post(`/api/admin/brandkits/${kit.id}/templates`, {
+        name: `Deck Template ${label}`,
+        htmlTemplate: '<html><body style="width:1080px;height:1080px;background:#0284c7;color:#fff">{{topic}}</body></html>',
+      })
+    ).json()
+    const camp = await (await api.post('/api/campaigns', { name: `Deck Campaign ${label}`, brandKitId: kit.id })).json()
+
+    const createRes = await api.post('/api/decks', {
+      topic: `Deck E2E ${label}`,
+      goal: 'inform the team',
+      tone: 'professional',
+      designMode: 'TEMPLATE',
+      templateId: template.id,
+      copyProviderKey: 'cli',
+      campaignId: camp.id,
+      brandKitId: kit.id,
+    })
+    expect(createRes.status()).toBe(201)
+    const { deckId } = await createRes.json()
+
+    const detail = (await (await api.get(`/api/decks/${deckId}`)).json()) as DeckRow & { templateId: string | null }
+    expect(detail.templateId).toBe(template.id)
+
+    await api.post(`/api/decks/${deckId}/outline`, {})
+    const proposed = (await (await api.get(`/api/decks/${deckId}`)).json()) as DeckRow
+    const approveRes = await api.post(`/api/decks/${deckId}/outline/approve`, {
+      slides: proposed.proposedOutline!.slides,
+    })
+    expect(approveRes.status()).toBe(202)
+
+    const generated = await waitForAllSlides(api, deckId)
+    expect(generated.slides.length).toBeGreaterThanOrEqual(1)
+    for (const slide of generated.slides) {
+      expect(slide.status).toBe('EXPORTED')
+      expect(slide.failureReason).toBeNull()
+    }
+  })
+
+  // TC-DECK-06 — Path A validation at POST /api/decks (eager, per design.md
+  // Key Decisions): missing templateId, wrong-kit template, and aspect-ratio
+  // mismatch all 4xx instead of only surfacing later at approval (AC-5/AC-6).
+  test('POST /api/decks rejects a bad Path A template selection with a 4xx, never a 500', async () => {
+    if (!MOCKED()) {
+      test.skip()
+      return
+    }
+    const label = `PathABad ${Date.now()}`
+    const kitA = await (await api.post('/api/admin/brandkits', { name: `Deck Kit A ${label}`, colors: ['#0284c7'] })).json()
+    const kitB = await (await api.post('/api/admin/brandkits', { name: `Deck Kit B ${label}`, colors: ['#111827'] })).json()
+    const templateOnKitA = await (
+      await api.post(`/api/admin/brandkits/${kitA.id}/templates`, {
+        name: `Deck Template A ${label}`,
+        htmlTemplate: '<html><body style="width:1080px;height:1080px;background:#0284c7">{{topic}}</body></html>',
+      })
+    ).json()
+    const portraitTemplateOnKitA = await (
+      await api.post(`/api/admin/brandkits/${kitA.id}/templates`, {
+        name: `Deck Template A Portrait ${label}`,
+        htmlTemplate: '<html><body style="width:1080px;height:1350px;background:#0284c7">{{topic}}</body></html>',
+        aspectRatio: 'PORTRAIT',
+      })
+    ).json()
+
+    const base = {
+      topic: `Deck E2E ${label}`,
+      goal: 'inform the team',
+      tone: 'professional',
+      designMode: 'TEMPLATE',
+      copyProviderKey: 'cli',
+      brandKitId: kitA.id,
+    }
+
+    // Missing templateId entirely.
+    const missing = await api.post('/api/decks', base)
+    expect(missing.status()).toBe(400)
+
+    // Nonexistent templateId.
+    const notFound = await api.post('/api/decks', { ...base, templateId: 'not-a-real-template-id' })
+    expect(notFound.status()).toBe(404)
+
+    // Template belongs to a different brand kit than the deck's brandKitId.
+    const templateOnKitB = await (
+      await api.post(`/api/admin/brandkits/${kitB.id}/templates`, {
+        name: `Deck Template B ${label}`,
+        htmlTemplate: '<html><body style="width:1080px;height:1080px;background:#111827">{{topic}}</body></html>',
+      })
+    ).json()
+    const kitMismatch = await api.post('/api/decks', { ...base, templateId: templateOnKitB.id })
+    expect(kitMismatch.status()).toBe(400)
+
+    // Template's aspect ratio (PORTRAIT) doesn't match the deck's (default SQUARE).
+    const aspectMismatch = await api.post('/api/decks', { ...base, templateId: portraitTemplateOnKitA.id })
+    expect(aspectMismatch.status()).toBe(400)
+
+    // Sanity: the matching template on the matching kit is accepted (201).
+    const ok = await api.post('/api/decks', { ...base, templateId: templateOnKitA.id })
+    expect(ok.status()).toBe(201)
+  })
 })
