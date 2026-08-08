@@ -6,13 +6,14 @@ import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/apiFetch'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { canSubmitBrief } from '@/lib/brief/copyProvider'
-import type { AspectRatio } from '@prisma/client'
+import type { AspectRatio, DesignMode } from '@prisma/client'
 import type {
   Campaign,
   ProjectRef,
   BrandKitSummary,
   ProviderInfo,
   ResolvedBrandKitResponse,
+  TemplateSummary,
 } from '@/lib/api-types'
 import type { ResolvedKit, UploadedImage } from '@/components/brief/types'
 import { MAX_DECK_SLIDES } from '@/lib/deck/constants'
@@ -26,11 +27,9 @@ import type { DeckOutlinePhase, DeckOutlineSlideDraft, DeckDetail } from './type
 // autosave/recovery (deferred — design.md Key Decisions: "a deck brief is a
 // single short form, the loss-on-refresh risk is much smaller").
 //
-// designMode is deliberately NOT a wizard field: Deck has no templateId column
-// at all (design.md Data Model Changes), so Path A (TEMPLATE) has nothing to
-// fill in and would fail at approval time (resolveGenerationInputs throws
-// TemplateNotFoundError). Every deck is generated Path B (GENERATE) until a
-// follow-up change adds template support at the deck level.
+// designMode/templateId mirror useBriefWizard.ts's Path A/B handling: templates
+// filter to the selected brand kit + aspect ratio, and a selection that no
+// longer matches (kit or size changed) is cleared automatically.
 
 export interface DeckProjectCampaignGroup {
   project: ProjectRef
@@ -60,6 +59,11 @@ export interface UseDeckWizardResult {
   brandKitId: string
   setBrandKitId: React.Dispatch<React.SetStateAction<string>>
   brandKitOptions: { value: string; label: string }[]
+  designMode: DesignMode
+  setDesignMode: React.Dispatch<React.SetStateAction<DesignMode>>
+  templateId: string
+  setTemplateId: React.Dispatch<React.SetStateAction<string>>
+  visibleTemplates: TemplateSummary[]
 
   // Step 2 — Content
   topic: string
@@ -117,6 +121,8 @@ export function useDeckWizard(): UseDeckWizardResult {
   // Step 1 — Brand & Size
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('SQUARE')
   const [brandKitId, setBrandKitId] = useState('')
+  const [designMode, setDesignMode] = useState<DesignMode>('GENERATE')
+  const [templateId, setTemplateId] = useState('')
 
   // Step 2 — Content
   const [topic, setTopic] = useState('')
@@ -148,6 +154,13 @@ export function useDeckWizard(): UseDeckWizardResult {
   const { data: brandKits = [] } = useQuery({
     queryKey: ['brandkits'],
     queryFn: () => apiFetch<BrandKitSummary[]>('/api/brandkits'),
+  })
+  // Same query key/fn as useBriefWizard.ts — shares the React Query cache
+  // across the two wizards (neither ever mutates templates, so this is a
+  // read-only cache-hit optimization, not a correctness risk).
+  const { data: templates = [] } = useQuery({
+    queryKey: ['templates'],
+    queryFn: () => apiFetch<TemplateSummary[]>('/api/templates'),
   })
 
   const { data: copyProviders, isSuccess: copyProvidersLoaded } = useQuery({
@@ -185,6 +198,18 @@ export function useDeckWizard(): UseDeckWizardResult {
     }
 
   }, [resolvedKitResponse, campaignId])
+
+  // Keep the template selection consistent with the chosen brand kit AND size
+  // (mirrors useBriefWizard.ts) — any template that no longer belongs to the
+  // selected kit, or no longer matches the chosen aspect ratio, is cleared,
+  // since the picker only ever offers matching templates.
+  useEffect(() => {
+    const matches = (id: string) => {
+      const t = templates.find(t => t.id === id)
+      return !!t && (!brandKitId || t.brandKitId === brandKitId) && t.aspectRatio === aspectRatio
+    }
+    setTemplateId(prev => (prev && !matches(prev) ? '' : prev))
+  }, [brandKitId, aspectRatio, templates])
 
   function selectCampaign(id: string) {
     setCampaignId(id)
@@ -237,9 +262,15 @@ export function useDeckWizard(): UseDeckWizardResult {
     ...brandKits.map(k => ({ value: k.id, label: k.name })),
   ]
 
+  // Templates filter to the selected brand kit AND the chosen size (mirrors
+  // useBriefWizard.ts) — Path A never fills a mismatched template.
+  const visibleTemplates = templates.filter(
+    t => (!brandKitId || t.brandKitId === brandKitId) && t.aspectRatio === aspectRatio,
+  )
+
   function stepValid(s: number): boolean {
     if (s === 0) return true
-    if (s === 1) return brandKitId !== ''
+    if (s === 1) return brandKitId !== '' && (designMode === 'GENERATE' || templateId !== '')
     if (s === 2) return topic.trim().length > 0 && prompt.trim().length > 10
     if (s === 3) return !uploading
     return true
@@ -260,7 +291,8 @@ export function useDeckWizard(): UseDeckWizardResult {
             goal,
             tone,
             aspectRatio,
-            designMode: 'GENERATE',
+            designMode,
+            templateId: designMode === 'TEMPLATE' ? templateId : undefined,
             campaignId: campaignId || undefined,
             brandKitId: brandKitId || undefined,
             copyProviderKey: copyProviderKey || undefined,
@@ -366,6 +398,11 @@ export function useDeckWizard(): UseDeckWizardResult {
     brandKitId,
     setBrandKitId,
     brandKitOptions,
+    designMode,
+    setDesignMode,
+    templateId,
+    setTemplateId,
+    visibleTemplates,
     topic,
     setTopic,
     prompt,
